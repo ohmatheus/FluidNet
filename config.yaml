@@ -1,0 +1,6 @@
+simulation:
+  grid_resolution: [128, 128, 1]
+
+training:
+  batch_size: 32
+  learning_rate: 0.0001
