@@ -35,9 +35,12 @@ def get_grid_names(vdb_path: str) -> list[str]:
     return available_grids
 
 
-def extract_velocity_components_avg(grid: Any, target_resolution: int) -> dict[str, np.ndarray]:
+def extract_velocity_components_avg(
+    grid: Any, target_resolution: int, density_grid: Any = None
+) -> dict[str, np.ndarray]:
     """
     Extract both X and Z velocity components by averaging across Y layers.
+    If density_grid is provided, uses density-weighted averaging; otherwise uses uniform averaging.
     Pads active voxel region to full domain (target_resolution x target_resolution) before resizing.
     """
     print(f"    Processing velocity grid (type: {type(grid)})")
@@ -61,12 +64,13 @@ def extract_velocity_components_avg(grid: Any, target_resolution: int) -> dict[s
             # IMPORTANT: store arrays as (Z, X) so that rows correspond to Z (vertical) and columns to X (horizontal)
             vel_x_sum = np.zeros((dim_z, dim_x), dtype=np.float32)
             vel_z_sum = np.zeros((dim_z, dim_x), dtype=np.float32)
-            count_array = np.zeros((dim_z, dim_x), dtype=np.int32)
+            weight_sum = np.zeros((dim_z, dim_x), dtype=np.float32)
 
             accessor = grid.getAccessor()
+            dens_accessor = density_grid.getAccessor() if density_grid is not None else None
             valid_samples = 0
 
-            # Sum across all Y layers
+            # Sum across all Y layers (density-weighted if density_grid provided)
             for y in range(min_y, max_y + 1):
                 for i, x in enumerate(range(min_x, max_x + 1)):
                     for j, z in enumerate(range(min_z, max_z + 1)):
@@ -82,20 +86,38 @@ def extract_velocity_components_avg(grid: Any, target_resolution: int) -> dict[s
 
                             # Extract X and Z components from 3D velocity vector
                             if hasattr(velocity_vec, "__len__") and len(velocity_vec) >= 3:
-                                # write into (Z, X) grid => index [j, i]
-                                vel_x_sum[j, i] += float(velocity_vec[0])  # X component
-                                vel_z_sum[j, i] += float(velocity_vec[2])  # Z component
-                                count_array[j, i] += 1
+                                vx = float(velocity_vec[0])  # X component
+                                vz = float(velocity_vec[2])  # Z component
 
-                                if velocity_vec[0] != 0.0 or velocity_vec[2] != 0.0:
+                                # Get weight: density value if available, else 1.0
+                                if dens_accessor is not None:
+                                    try:
+                                        dens_val = dens_accessor.getValue((x, y, z))
+                                    except Exception:
+                                        try:
+                                            dens_val = dens_accessor.getValue(x, y, z)
+                                        except Exception:
+                                            dens_val = 0.0
+                                    weight = float(dens_val)
+                                    if weight <= 0.0:
+                                        continue  # Skip voxels with zero or negative density
+                                else:
+                                    weight = 1.0  # Uniform averaging fallback
+
+                                # Accumulate weighted sums
+                                vel_x_sum[j, i] += weight * vx
+                                vel_z_sum[j, i] += weight * vz
+                                weight_sum[j, i] += weight
+
+                                if vx != 0.0 or vz != 0.0:
                                     valid_samples += 1
 
                         except Exception:
                             continue
 
-            # Average by dividing by count (avoid division by zero)
-            vel_x_data = np.divide(vel_x_sum, count_array, out=np.zeros_like(vel_x_sum), where=count_array != 0)
-            vel_z_data = np.divide(vel_z_sum, count_array, out=np.zeros_like(vel_z_sum), where=count_array != 0)
+            # Average by dividing by weight sum (avoid division by zero)
+            vel_x_data = np.divide(vel_x_sum, weight_sum, out=np.zeros_like(vel_x_sum), where=weight_sum != 0)
+            vel_z_data = np.divide(vel_z_sum, weight_sum, out=np.zeros_like(vel_z_sum), where=weight_sum != 0)
 
             print(f"    Valid velocity samples: {valid_samples}")
 
@@ -268,6 +290,7 @@ def process_vdb_file(
 
         frame_num = extract_frame_number(vdb_path)
         frame_data = {}
+        density_grid_obj = None  # Store 3D density grid for velocity weighting
 
         for grid_name in available_grids:
             print(f"  Processing '{grid_name}':")
@@ -276,6 +299,7 @@ def process_vdb_file(
                 grid = openvdb.read(vdb_path, grid_name)
 
                 if grid_name == "density":
+                    density_grid_obj = grid  # Store 3D density grid for velocity weighting
                     density = extract_density_field_sum(grid, target_resolution)
                     # Blender extraction returns (Z, X)
                     if axis_order.upper() == "XZ":
@@ -299,7 +323,9 @@ def process_vdb_file(
                         print(f"    Saved: density_{frame_num:04d}.npy")
 
                 elif grid_name == "velocity":
-                    velocity_components = extract_velocity_components_avg(grid, target_resolution)
+                    velocity_components = extract_velocity_components_avg(
+                        grid, target_resolution, density_grid=density_grid_obj
+                    )
                     # Reorder and flip each component the same way as density
                     # IMPORTANT: When flipping axes, velocity components must be negated for physical correctness
                     for key in ("velx", "velz"):
