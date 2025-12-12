@@ -1,7 +1,6 @@
 import argparse
-import glob
-import os
 import re
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -9,8 +8,9 @@ import openvdb  # type: ignore[import-not-found]
 from scipy.ndimage import zoom  # type: ignore[import-untyped]
 
 
-def extract_frame_number(vdb_path: str) -> int:
-    basename = os.path.basename(vdb_path)
+def extract_frame_number(vdb_path: Path) -> int:
+    vdb_path = Path(vdb_path)
+    basename = vdb_path.name
     try:
         parts = basename.replace(".vdb", "").split("_")
         for part in reversed(parts):
@@ -21,15 +21,18 @@ def extract_frame_number(vdb_path: str) -> int:
         return 0
 
 
-def get_grid_names(vdb_path: str) -> list[str]:
+def get_grid_names(vdb_path: Path) -> list[str]:
     target_grids = ["density", "velocity"]  # add later here collision mask, etc
     available_grids: list[str] = []
 
+    vdb_path_str = str(vdb_path)
+
     for grid_name in target_grids:
         try:
-            _ = openvdb.read(vdb_path, grid_name)
+            _ = openvdb.read(vdb_path_str, grid_name)
             available_grids.append(grid_name)
-        except Exception:
+        except Exception as e:
+            print(f"  Warning: Could not read grid '{grid_name}' from {Path(vdb_path).name}: {e}")
             continue
 
     return available_grids
@@ -267,8 +270,8 @@ def extract_density_field_sum(grid: Any, target_resolution: int) -> np.ndarray:
 
 
 def process_vdb_file(
-    vdb_path: str,
-    output_dir: str,
+    vdb_path: Path,
+    output_dir: Path,
     target_resolution: int = 32,
     save_frames: bool = False,
     axis_order: str = "XZ",
@@ -277,7 +280,9 @@ def process_vdb_file(
 ) -> dict[str, np.ndarray]:
     """Process single VDB file - sum density, average velocity across Y."""
 
-    print(f"\nProcessing: {os.path.basename(vdb_path)}")
+    vdb_path = Path(vdb_path)
+    output_dir = Path(output_dir)
+    print(f"\nProcessing: {vdb_path.name}")
 
     try:
         available_grids = get_grid_names(vdb_path)
@@ -296,7 +301,7 @@ def process_vdb_file(
             print(f"  Processing '{grid_name}':")
 
             try:
-                grid = openvdb.read(vdb_path, grid_name)
+                grid = openvdb.read(str(vdb_path), grid_name)
 
                 if grid_name == "density":
                     density_grid_obj = grid  # Store 3D density grid for velocity weighting
@@ -318,7 +323,7 @@ def process_vdb_file(
                     frame_data["density"] = density
                     if save_frames:
                         # Save density frame as .npy when requested
-                        output_path = os.path.join(output_dir, f"density_{frame_num:04d}.npy")
+                        output_path = output_dir / f"density_{frame_num:04d}.npy"
                         np.save(output_path, density)
                         print(f"    Saved: density_{frame_num:04d}.npy")
 
@@ -353,7 +358,7 @@ def process_vdb_file(
                     if save_frames:
                         # Save velocity components as .npy when requested
                         for comp_name, comp_data in velocity_components.items():
-                            output_path = os.path.join(output_dir, f"{comp_name}_{frame_num:04d}.npy")
+                            output_path = output_dir / f"{comp_name}_{frame_num:04d}.npy"
                             np.save(output_path, comp_data)
                             print(f"    Saved: {comp_name}_{frame_num:04d}.npy")
 
@@ -368,8 +373,8 @@ def process_vdb_file(
 
 
 def process_all_frames(
-    cache_dir: str,
-    output_dir: str,
+    cache_dir: Path,
+    output_dir: Path,
     target_resolution: int,
     max_frames: int | None = None,
     save_frames: bool = False,
@@ -378,7 +383,9 @@ def process_all_frames(
     Process all VDB files in directory and directly pack non-overlapping sequences into seq_*.npz.
     """
 
-    vdb_files = sorted(glob.glob(os.path.join(cache_dir, "*.vdb")))
+    cache_dir = Path(cache_dir)
+    output_dir = Path(output_dir)
+    vdb_files = sorted(cache_dir.glob("*.vdb"))
 
     if not vdb_files:
         print(f"No VDB files found in {cache_dir}")
@@ -389,7 +396,7 @@ def process_all_frames(
     print("Processing: DENSITY (sum across Y), VELOCITY (average across Y)")
     # Deduce sequence length if not provided: use number of files that look like 'fluid_data_0001.vdb'
     pat = re.compile(r"^fluid_data_\d{4,}\.vdb$")
-    candidate_files = [f for f in vdb_files if pat.match(os.path.basename(f))]
+    candidate_files = [f for f in vdb_files if pat.match(f.name)]
     deduced = len(candidate_files) if candidate_files else len(vdb_files)
     seq_len = deduced
     print(f"Deduced sequence length: {seq_len} (from folder contents)")
@@ -398,7 +405,7 @@ def process_all_frames(
         vdb_files = vdb_files[:max_frames]
         print(f"Processing first {len(vdb_files)} files")
 
-    os.makedirs(output_dir, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Process files
     successful = 0
@@ -471,7 +478,7 @@ def process_all_frames(
         z_stack = np.stack(velz_frames[start:end], axis=0).astype(np.float32, copy=False)
 
         out_name = f"seq_{s:04d}.npz"
-        out_path = os.path.join(output_dir, out_name)
+        out_path = output_dir / out_name
         np.savez_compressed(out_path, density=d_stack, velx=x_stack, velz=z_stack)
         print(f"Saved {out_path}  shape: T={T}, H={H}, W={W}")
 
@@ -499,10 +506,10 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    cache_dir = os.path.abspath(args.cache_dir)
-    output_dir = os.path.abspath(args.output_dir)
+    cache_dir = Path(args.cache_dir).resolve()
+    output_dir = Path(args.output_dir).resolve()
 
-    if not os.path.exists(cache_dir):
+    if not cache_dir.exists():
         print(f"Error: Cache directory not found: {cache_dir}")
         return
 

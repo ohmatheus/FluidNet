@@ -1,5 +1,5 @@
 import argparse
-import os
+from pathlib import Path
 
 import numpy as np
 from PIL import Image
@@ -8,8 +8,8 @@ from PIL import Image
 AVAILABLE_FIELDS = ["density", "velx", "velz", "vel_magnitude"]
 
 
-def _ensure_dir(path: str) -> None:
-    os.makedirs(path, exist_ok=True)
+def _ensure_dir(path: Path) -> None:
+    Path(path).mkdir(parents=True, exist_ok=True)
 
 
 def _to_uint8(img: np.ndarray) -> np.ndarray:
@@ -28,7 +28,7 @@ def _save_png(array2d: np.ndarray, path: str) -> None:
 
 
 def render_npz_field(
-    npz_path: str, out_dir: str, field: str = "density", prefix: str | None = None, scale: int = 4
+    npz_path: Path, out_dir: Path, field: str = "density", prefix: str | None = None, scale: int = 4
 ) -> int:
     """
     Render a field from NPZ file to PNG images.
@@ -54,10 +54,12 @@ def render_npz_field(
             raise ValueError(f"Expected {field} to be (T,H,W), got {field_data.shape} in {npz_path}")
 
     T: int = int(field_data.shape[0])
-    seq_name = prefix if prefix is not None else os.path.splitext(os.path.basename(npz_path))[0]
+    npz_path = Path(npz_path)
+    out_dir = Path(out_dir)
+    seq_name = prefix if prefix is not None else npz_path.stem
 
     # Create nested directory structure: seq_name/field_name/
-    seq_field_dir = os.path.join(out_dir, seq_name, field)
+    seq_field_dir = out_dir / seq_name / field
     _ensure_dir(seq_field_dir)
 
     # Use sequence-wide normalization for consistency across frames
@@ -72,7 +74,7 @@ def render_npz_field(
 
     for t in range(T):
         fname = f"frame_{t:04d}.png"
-        fpath = os.path.join(seq_field_dir, fname)
+        fpath = seq_field_dir / fname
         img = Image.fromarray(norm[t], mode="L")
         if scale and scale != 1:
             try:
@@ -90,7 +92,7 @@ def render_npz_field(
     return T
 
 
-def render_npz_all_fields(npz_path: str, out_dir: str, prefix: str | None = None, scale: int = 4) -> dict[str, int]:
+def render_npz_all_fields(npz_path: Path, out_dir: Path, prefix: str | None = None, scale: int = 4) -> dict[str, int]:
     """
     Render all available fields from NPZ file to PNG images.
     """
@@ -120,34 +122,36 @@ def main() -> None:
     parser.add_argument("--scale", type=int, default=4, help="Upscale factor for output images (default: 4)")
     args = parser.parse_args()
 
-    _ensure_dir(args.output)
+    input_path = Path(args.input)
+    output_path = Path(args.output)
+    _ensure_dir(output_path)
 
     processed = 0
     render_all = args.field == "all"
 
-    if os.path.isdir(args.input):
-        files: list[str] = sorted(
-            [os.path.join(args.input, f) for f in os.listdir(args.input) if f.startswith("seq_") and f.endswith(".npz")]
+    if input_path.is_dir():
+        files: list[Path] = sorted(
+            [f for f in input_path.iterdir() if f.name.startswith("seq_") and f.name.endswith(".npz")]
         )
         if not files:
             raise FileNotFoundError(f"No seq_*.npz found in {args.input}")
         for fp in files:
             if render_all:
                 print(f"Rendering all fields from {fp}")
-                render_npz_all_fields(fp, args.output, scale=args.scale)
+                render_npz_all_fields(fp, output_path, scale=args.scale)
             else:
-                n = render_npz_field(fp, args.output, field=args.field, scale=args.scale)
+                n = render_npz_field(fp, output_path, field=args.field, scale=args.scale)
                 print(f"Rendered {n} {args.field} frames from {fp}")
             processed += 1
     else:
-        if not os.path.isfile(args.input):
+        if not input_path.is_file():
             raise FileNotFoundError(args.input)
         if render_all:
-            print(f"Rendering all fields from {args.input}")
-            render_npz_all_fields(args.input, args.output, scale=args.scale)
+            print(f"Rendering all fields from {input_path}")
+            render_npz_all_fields(input_path, output_path, scale=args.scale)
         else:
-            n = render_npz_field(args.input, args.output, field=args.field, scale=args.scale)
-            print(f"Rendered {n} {args.field} frames from {args.input}")
+            n = render_npz_field(input_path, output_path, field=args.field, scale=args.scale)
+            print(f"Rendered {n} {args.field} frames from {input_path}")
         processed = 1
 
     field_desc = "all fields" if render_all else f"field: {args.field}"
