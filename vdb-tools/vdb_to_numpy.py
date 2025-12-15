@@ -1,7 +1,6 @@
 import argparse
-import glob
-import os
 import re
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -9,8 +8,9 @@ import openvdb  # type: ignore[import-not-found]
 from scipy.ndimage import zoom  # type: ignore[import-untyped]
 
 
-def extract_frame_number(vdb_path: str) -> int:
-    basename = os.path.basename(vdb_path)
+def extract_frame_number(vdb_path: Path) -> int:
+    vdb_path = Path(vdb_path)
+    basename = vdb_path.name
     try:
         parts = basename.replace(".vdb", "").split("_")
         for part in reversed(parts):
@@ -21,23 +21,29 @@ def extract_frame_number(vdb_path: str) -> int:
         return 0
 
 
-def get_grid_names(vdb_path: str) -> list[str]:
+def get_grid_names(vdb_path: Path) -> list[str]:
     target_grids = ["density", "velocity"]  # add later here collision mask, etc
     available_grids: list[str] = []
 
+    vdb_path_str = str(vdb_path)
+
     for grid_name in target_grids:
         try:
-            _ = openvdb.read(vdb_path, grid_name)
+            _ = openvdb.read(vdb_path_str, grid_name)
             available_grids.append(grid_name)
-        except Exception:
+        except Exception as e:
+            print(f"  Warning: Could not read grid '{grid_name}' from {Path(vdb_path).name}: {e}")
             continue
 
     return available_grids
 
 
-def extract_velocity_components_avg(grid: Any, target_resolution: int) -> dict[str, np.ndarray]:
+def extract_velocity_components_avg(
+    grid: Any, target_resolution: int, density_grid: Any = None
+) -> dict[str, np.ndarray]:
     """
     Extract both X and Z velocity components by averaging across Y layers.
+    If density_grid is provided, uses density-weighted averaging; otherwise uses uniform averaging.
     Pads active voxel region to full domain (target_resolution x target_resolution) before resizing.
     """
     print(f"    Processing velocity grid (type: {type(grid)})")
@@ -61,12 +67,13 @@ def extract_velocity_components_avg(grid: Any, target_resolution: int) -> dict[s
             # IMPORTANT: store arrays as (Z, X) so that rows correspond to Z (vertical) and columns to X (horizontal)
             vel_x_sum = np.zeros((dim_z, dim_x), dtype=np.float32)
             vel_z_sum = np.zeros((dim_z, dim_x), dtype=np.float32)
-            count_array = np.zeros((dim_z, dim_x), dtype=np.int32)
+            weight_sum = np.zeros((dim_z, dim_x), dtype=np.float32)
 
             accessor = grid.getAccessor()
+            dens_accessor = density_grid.getAccessor() if density_grid is not None else None
             valid_samples = 0
 
-            # Sum across all Y layers
+            # Sum across all Y layers (density-weighted if density_grid provided)
             for y in range(min_y, max_y + 1):
                 for i, x in enumerate(range(min_x, max_x + 1)):
                     for j, z in enumerate(range(min_z, max_z + 1)):
@@ -82,20 +89,38 @@ def extract_velocity_components_avg(grid: Any, target_resolution: int) -> dict[s
 
                             # Extract X and Z components from 3D velocity vector
                             if hasattr(velocity_vec, "__len__") and len(velocity_vec) >= 3:
-                                # write into (Z, X) grid => index [j, i]
-                                vel_x_sum[j, i] += float(velocity_vec[0])  # X component
-                                vel_z_sum[j, i] += float(velocity_vec[2])  # Z component
-                                count_array[j, i] += 1
+                                vx = float(velocity_vec[0])  # X component
+                                vz = float(velocity_vec[2])  # Z component
 
-                                if velocity_vec[0] != 0.0 or velocity_vec[2] != 0.0:
+                                # Get weight: density value if available, else 1.0
+                                if dens_accessor is not None:
+                                    try:
+                                        dens_val = dens_accessor.getValue((x, y, z))
+                                    except Exception:
+                                        try:
+                                            dens_val = dens_accessor.getValue(x, y, z)
+                                        except Exception:
+                                            dens_val = 0.0
+                                    weight = float(dens_val)
+                                    if weight <= 0.0:
+                                        continue  # Skip voxels with zero or negative density
+                                else:
+                                    weight = 1.0  # Uniform averaging fallback
+
+                                # Accumulate weighted sums
+                                vel_x_sum[j, i] += weight * vx
+                                vel_z_sum[j, i] += weight * vz
+                                weight_sum[j, i] += weight
+
+                                if vx != 0.0 or vz != 0.0:
                                     valid_samples += 1
 
                         except Exception:
                             continue
 
-            # Average by dividing by count (avoid division by zero)
-            vel_x_data = np.divide(vel_x_sum, count_array, out=np.zeros_like(vel_x_sum), where=count_array != 0)
-            vel_z_data = np.divide(vel_z_sum, count_array, out=np.zeros_like(vel_z_sum), where=count_array != 0)
+            # Average by dividing by weight sum (avoid division by zero)
+            vel_x_data = np.divide(vel_x_sum, weight_sum, out=np.zeros_like(vel_x_sum), where=weight_sum != 0)
+            vel_z_data = np.divide(vel_z_sum, weight_sum, out=np.zeros_like(vel_z_sum), where=weight_sum != 0)
 
             print(f"    Valid velocity samples: {valid_samples}")
 
@@ -245,8 +270,8 @@ def extract_density_field_sum(grid: Any, target_resolution: int) -> np.ndarray:
 
 
 def process_vdb_file(
-    vdb_path: str,
-    output_dir: str,
+    vdb_path: Path,
+    output_dir: Path,
     target_resolution: int = 32,
     save_frames: bool = False,
     axis_order: str = "XZ",
@@ -255,7 +280,9 @@ def process_vdb_file(
 ) -> dict[str, np.ndarray]:
     """Process single VDB file - sum density, average velocity across Y."""
 
-    print(f"\nProcessing: {os.path.basename(vdb_path)}")
+    vdb_path = Path(vdb_path)
+    output_dir = Path(output_dir)
+    print(f"\nProcessing: {vdb_path.name}")
 
     try:
         available_grids = get_grid_names(vdb_path)
@@ -268,14 +295,16 @@ def process_vdb_file(
 
         frame_num = extract_frame_number(vdb_path)
         frame_data = {}
+        density_grid_obj = None  # Store 3D density grid for velocity weighting
 
         for grid_name in available_grids:
             print(f"  Processing '{grid_name}':")
 
             try:
-                grid = openvdb.read(vdb_path, grid_name)
+                grid = openvdb.read(str(vdb_path), grid_name)
 
                 if grid_name == "density":
+                    density_grid_obj = grid  # Store 3D density grid for velocity weighting
                     density = extract_density_field_sum(grid, target_resolution)
                     # Blender extraction returns (Z, X)
                     if axis_order.upper() == "XZ":
@@ -294,12 +323,14 @@ def process_vdb_file(
                     frame_data["density"] = density
                     if save_frames:
                         # Save density frame as .npy when requested
-                        output_path = os.path.join(output_dir, f"density_{frame_num:04d}.npy")
+                        output_path = output_dir / f"density_{frame_num:04d}.npy"
                         np.save(output_path, density)
                         print(f"    Saved: density_{frame_num:04d}.npy")
 
                 elif grid_name == "velocity":
-                    velocity_components = extract_velocity_components_avg(grid, target_resolution)
+                    velocity_components = extract_velocity_components_avg(
+                        grid, target_resolution, density_grid=density_grid_obj
+                    )
                     # Reorder and flip each component the same way as density
                     # IMPORTANT: When flipping axes, velocity components must be negated for physical correctness
                     for key in ("velx", "velz"):
@@ -327,7 +358,7 @@ def process_vdb_file(
                     if save_frames:
                         # Save velocity components as .npy when requested
                         for comp_name, comp_data in velocity_components.items():
-                            output_path = os.path.join(output_dir, f"{comp_name}_{frame_num:04d}.npy")
+                            output_path = output_dir / f"{comp_name}_{frame_num:04d}.npy"
                             np.save(output_path, comp_data)
                             print(f"    Saved: {comp_name}_{frame_num:04d}.npy")
 
@@ -342,8 +373,8 @@ def process_vdb_file(
 
 
 def process_all_frames(
-    cache_dir: str,
-    output_dir: str,
+    cache_dir: Path,
+    output_dir: Path,
     target_resolution: int,
     max_frames: int | None = None,
     save_frames: bool = False,
@@ -352,7 +383,9 @@ def process_all_frames(
     Process all VDB files in directory and directly pack non-overlapping sequences into seq_*.npz.
     """
 
-    vdb_files = sorted(glob.glob(os.path.join(cache_dir, "*.vdb")))
+    cache_dir = Path(cache_dir)
+    output_dir = Path(output_dir)
+    vdb_files = sorted(cache_dir.glob("*.vdb"))
 
     if not vdb_files:
         print(f"No VDB files found in {cache_dir}")
@@ -363,7 +396,7 @@ def process_all_frames(
     print("Processing: DENSITY (sum across Y), VELOCITY (average across Y)")
     # Deduce sequence length if not provided: use number of files that look like 'fluid_data_0001.vdb'
     pat = re.compile(r"^fluid_data_\d{4,}\.vdb$")
-    candidate_files = [f for f in vdb_files if pat.match(os.path.basename(f))]
+    candidate_files = [f for f in vdb_files if pat.match(f.name)]
     deduced = len(candidate_files) if candidate_files else len(vdb_files)
     seq_len = deduced
     print(f"Deduced sequence length: {seq_len} (from folder contents)")
@@ -372,7 +405,7 @@ def process_all_frames(
         vdb_files = vdb_files[:max_frames]
         print(f"Processing first {len(vdb_files)} files")
 
-    os.makedirs(output_dir, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Process files
     successful = 0
@@ -445,7 +478,7 @@ def process_all_frames(
         z_stack = np.stack(velz_frames[start:end], axis=0).astype(np.float32, copy=False)
 
         out_name = f"seq_{s:04d}.npz"
-        out_path = os.path.join(output_dir, out_name)
+        out_path = output_dir / out_name
         np.savez_compressed(out_path, density=d_stack, velx=x_stack, velz=z_stack)
         print(f"Saved {out_path}  shape: T={T}, H={H}, W={W}")
 
@@ -473,10 +506,10 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    cache_dir = os.path.abspath(args.cache_dir)
-    output_dir = os.path.abspath(args.output_dir)
+    cache_dir = Path(args.cache_dir).resolve()
+    output_dir = Path(args.output_dir).resolve()
 
-    if not os.path.exists(cache_dir):
+    if not cache_dir.exists():
         print(f"Error: Cache directory not found: {cache_dir}")
         return
 

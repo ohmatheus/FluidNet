@@ -19,14 +19,8 @@ class SimulationConfig(BaseModel):
     grid_resolution: list[int]
 
 
-class TrainingConfig(BaseModel):
-    batch_size: int
-    learning_rate: float
-
-
 class ProjectConfig(BaseModel):
     simulation: SimulationConfig
-    training: TrainingConfig
 
 
 def load_project_config() -> ProjectConfig:
