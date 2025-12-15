@@ -11,6 +11,8 @@ class SmallUNet(nn.Module):
       - GELU everywhere
       - ConvTranspose2d for upsampling
     """
+    model_name: str = "SmallUnet"
+    
 
     def __init__(
         self,

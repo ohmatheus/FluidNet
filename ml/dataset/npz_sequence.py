@@ -17,17 +17,29 @@ class FluidNPZSequenceDataset(Dataset):
       target: (3, H, W) = [density_{t+1}, velx_{t+1}, velz_{t+1}]
     """
 
-    def __init__(self, npz_dir: str | Path, normalize: bool = False, device: str = "cpu") -> None:
+    def __init__(
+        self,
+        npz_dir: str | Path,
+        normalize: bool = False,
+        device: str = "cpu",
+        seq_indices: list[int] | None = None,
+    ) -> None:
         self.npz_dir = npz_dir
         self.normalize = normalize
         self.device = torch.device(device) if device is not None else None
 
         npz_dir_path = Path(npz_dir)
-        self.seq_paths: list[Path] = sorted(
+        all_seq_paths: list[Path] = sorted(
             [f for f in npz_dir_path.iterdir() if f.name.startswith("seq_") and f.name.endswith(".npz")]
         )
-        if not self.seq_paths:
+        if not all_seq_paths:
             raise FileNotFoundError(f"No seq_*.npz files found in {npz_dir}")
+
+        # Filter to specified sequences if provided (splits)
+        if seq_indices is not None:
+            self.seq_paths = [all_seq_paths[i] for i in seq_indices]
+        else:
+            self.seq_paths = all_seq_paths
 
         # Build index mapping and optionally compute per-sequence stats
         self._index: list[tuple[int, int]] = []  # (seq_idx, t)
@@ -60,19 +72,19 @@ class FluidNPZSequenceDataset(Dataset):
                     # channels: [density, velx, velz]
                     c_means = np.array(
                         [
-                            d.mean(dtype=np.float64),
-                            vx.mean(dtype=np.float64),
-                            vz.mean(dtype=np.float64),
+                            d.mean(dtype=np.float32),
+                            vx.mean(dtype=np.float32),
+                            vz.mean(dtype=np.float32),
                         ],
-                        dtype=np.float64,
+                        dtype=np.float32,
                     )
                     c_stds = np.array(
                         [
-                            d.std(dtype=np.float64),
-                            vx.std(dtype=np.float64),
-                            vz.std(dtype=np.float64),
+                            d.std(dtype=np.float32),
+                            vx.std(dtype=np.float32),
+                            vz.std(dtype=np.float32),
                         ],
-                        dtype=np.float64,
+                        dtype=np.float32,
                     )
                     # Avoid divide by zero
                     c_stds = np.where(c_stds == 0, 1.0, c_stds)
