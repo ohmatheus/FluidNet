@@ -10,7 +10,6 @@ class SmallUNet(nn.Module):
     Simple baseline U-Net:
       - GELU everywhere
       - ConvTranspose2d for upsampling
-      - tweakable via constructor args (in/out/base/depth)
     """
 
     def __init__(
