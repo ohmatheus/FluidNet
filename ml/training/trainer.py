@@ -1,14 +1,16 @@
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import mlflow
 import torch
 import torch.nn as nn
-from torch.cuda.amp import GradScaler, autocast
-from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from config.training_config import TrainingConfig
+if TYPE_CHECKING:
+    from torch.utils.data import DataLoader
+
+    from config.training_config import TrainingConfig
 
 
 class Trainer:
@@ -99,9 +101,7 @@ class Trainer:
 
             epoch_time = time.time() - epoch_start
 
-            mlflow.log_metrics(
-                {"train_loss": train_loss, "val_loss": val_loss, "epoch_time": epoch_time}, step=epoch
-            )
+            mlflow.log_metrics({"train_loss": train_loss, "val_loss": val_loss, "epoch_time": epoch_time}, step=epoch)
 
             print(
                 f"Epoch {epoch + 1}/{self.config.epochs} | "
@@ -166,7 +166,7 @@ class Trainer:
         if self.scaler is not None and "scaler_state_dict" in checkpoint:
             self.scaler.load_state_dict(checkpoint["scaler_state_dict"])
 
-        epoch = checkpoint.get("epoch", 0)
+        epoch = int(checkpoint.get("epoch", 0))
         print(f"Loaded checkpoint from epoch {epoch + 1}")
 
         return epoch

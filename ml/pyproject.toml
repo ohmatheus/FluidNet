@@ -19,6 +19,7 @@ dev = [
     "ruff>=0.14.8",
     "tox>=4.32.0",
     "types-pyyaml>=6.0.12.20250915",
+    "types-tqdm>=4.67.0.20250809",
 ]
 
 [tool.ruff]
@@ -43,7 +44,7 @@ files = [
     "models",
     "config",
     "training",
-    "cuda_check.py",
+    "main.py",
 ]
 plugins = [
     "pydantic.mypy",

@@ -11,12 +11,12 @@ class SmallUNet(nn.Module):
       - GELU everywhere
       - ConvTranspose2d for upsampling
     """
+
     model_name: str = "SmallUnet"
-    
 
     def __init__(
         self,
-        in_channels: int = 4, #(density, velx, vely, density-1)
+        in_channels: int = 4,  # (density, velx, vely, density-1)
         out_channels: int = 3,
         base_channels: int = 32,
         depth: int = 2,

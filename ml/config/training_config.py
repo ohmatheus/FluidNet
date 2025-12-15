@@ -8,7 +8,7 @@ class TrainingConfig(BaseModel):
     batch_size: int = 4
     learning_rate: float = 0.001
     epochs: int = 11
-    device: str | None = 'cuda'
+    device: str | None = "cuda"
     amp_enabled: bool = True
     num_workers: int = 4
 
@@ -25,7 +25,7 @@ class TrainingConfig(BaseModel):
     depth: int = 2
 
     # MLFlow settings
-    mlflow_tracking_uri: str = "./mlruns" #mlflow server
+    mlflow_tracking_uri: str = "./mlruns"  # mlflow server
     mlflow_experiment_name: str = "fluid_baseline_v1"
 
     # Checkpoint settings

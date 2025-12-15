@@ -14,6 +14,7 @@ class MLSettings(BaseSettings):
 
 # === project .yaml config ===
 
+
 class SimulationConfig(BaseModel):
     grid_resolution: list[int]
 
