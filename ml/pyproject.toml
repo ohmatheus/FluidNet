@@ -7,6 +7,7 @@ requires-python = ">=3.14"
 dependencies = [
     "mlflow>=3.7.0",
     "numpy>=2.3.5",
+    "pillow>=12.0.0",
     "pydantic-settings>=2.12.0",
     "pyyaml>=6.0.2",
     "torch>=2.9.1",
@@ -21,6 +22,10 @@ dev = [
     "types-pyyaml>=6.0.12.20250915",
     "types-tqdm>=4.67.0.20250809",
 ]
+
+[tool.setuptools.packages.find]
+include = ["config", "models", "dataset", "training", "inference", "utils"]
+exclude = [".venv*", ".tox*", "mlruns*", "__pycache__*", "*.egg-info"]
 
 [tool.ruff]
 line-length = 120
@@ -44,6 +49,7 @@ files = [
     "models",
     "config",
     "training",
+    "inference",
     "main.py",
 ]
 plugins = [
@@ -53,6 +59,12 @@ plugins = [
 [[tool.mypy.overrides]]
 module = "numpy.*"
 ignore_missing_imports = true
+
+[tool.pyright]
+include = ["config", "models", "dataset", "training", "inference", "utils"]
+extraPaths = ["."]
+pythonVersion = "3.14"
+pythonPlatform = "Linux"
 
 [[tool.mypy.overrides]]
 module = "torch.*"
