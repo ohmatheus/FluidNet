@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 if TYPE_CHECKING:
     from torch.utils.data import DataLoader
-
+    from torch.amp.grad_scaler import GradScaler as GradScalerType
     from config.training_config import TrainingConfig
 
 
@@ -25,15 +25,16 @@ class Trainer:
         self.model = model
         self.train_loader = train_loader
         self.val_loader = val_loader
-        self.config = config
+        self.config = config.model_copy()
         self.device = device
 
         # Simple optimizer and loss
         self.optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
         self.criterion = nn.MSELoss()
 
-        self.scaler = torch.amp.GradScaler() if config.amp_enabled and device == "cuda" else None
+        self.scaler = torch.amp.GradScaler('cuda') if config.amp_enabled and device == "cuda" else None # type: ignore[attr-defined]
 
+        self.config.checkpoint_dir = self.config.checkpoint_dir / str(model.model_name)
         self.config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     def train_epoch(self) -> float:
@@ -49,7 +50,7 @@ class Trainer:
 
             # Forward pass with AMP
             if self.scaler is not None:
-                with torch.amp.autocast(device_type=self.device):
+                with torch.amp.autocast(device_type=self.device): # type: ignore[attr-defined]
                     outputs = self.model(inputs)
                     loss = self.criterion(outputs, targets)
 
