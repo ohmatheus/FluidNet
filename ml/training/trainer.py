@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 if TYPE_CHECKING:
     from torch.utils.data import DataLoader
-    from torch.amp.grad_scaler import GradScaler as GradScalerType
+
     from config.training_config import TrainingConfig
 
 
@@ -32,7 +32,7 @@ class Trainer:
         self.optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
         self.criterion = nn.MSELoss()
 
-        self.scaler = torch.amp.GradScaler('cuda') if config.amp_enabled and device == "cuda" else None # type: ignore[attr-defined]
+        self.scaler = torch.amp.GradScaler("cuda") if config.amp_enabled and device == "cuda" else None
 
         self.config.checkpoint_dir = self.config.checkpoint_dir / str(model.model_name)
         self.config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -50,7 +50,7 @@ class Trainer:
 
             # Forward pass with AMP
             if self.scaler is not None:
-                with torch.amp.autocast(device_type=self.device): # type: ignore[attr-defined]
+                with torch.amp.autocast(device_type=self.device):
                     outputs = self.model(inputs)
                     loss = self.criterion(outputs, targets)
 

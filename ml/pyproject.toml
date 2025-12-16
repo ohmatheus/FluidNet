@@ -66,6 +66,11 @@ extraPaths = ["."]
 pythonVersion = "3.14"
 pythonPlatform = "Linux"
 
+[[tool.pyright.overrides]]
+module = "torch.amp"
+reportAttributeAccessIssue = false
+reportPrivateImportUsage = false
+
 [[tool.mypy.overrides]]
 module = "torch.*"
 ignore_missing_imports = true

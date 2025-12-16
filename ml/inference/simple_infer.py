@@ -1,12 +1,11 @@
-import sys
 from pathlib import Path
 
 import numpy as np
 import torch
 from PIL import Image
 
+from config.config import PROJECT_ROOT_PATH
 from models.small_unet import SmallUNet
-from config.config import ml_config, PROJECT_ROOT_PATH, ML_ROOT_PATH
 
 
 def load_model(checkpoint_path: str | Path, device: str) -> SmallUNet:
@@ -40,8 +39,10 @@ def load_model(checkpoint_path: str | Path, device: str) -> SmallUNet:
     model.to(device)
 
     print(f"Loaded model from {checkpoint_path}")
-    print(f"  Architecture: in_channels={in_channels}, out_channels={out_channels}, "
-          f"base_channels={base_channels}, depth={depth}")
+    print(
+        f"  Architecture: in_channels={in_channels}, out_channels={out_channels}, "
+        f"base_channels={base_channels}, depth={depth}"
+    )
 
     return model
 
@@ -101,7 +102,7 @@ def render_density_to_png(
         print(f"Saved {len(density_fields)} frames with per-frame normalization")
 
 
-def main():
+def main() -> None:
     MODEL_NAME = "SmallUnet"
     CHECKPOINT_PATH = Path(PROJECT_ROOT_PATH / f"data/checkpoints/{MODEL_NAME}/final_model.pth")
     OUTPUT_DIR = Path(PROJECT_ROOT_PATH / "data/simple_infer_output")
@@ -122,13 +123,11 @@ def main():
 
     circle_radius = 20
     center_x = RESOLUTION // 2
-    center_y = RESOLUTION // 2 + 30 # Near bottom
+    center_y = RESOLUTION // 2 + 30  # Near bottom
 
     # Create coordinate grids
     y_coords, x_coords = torch.meshgrid(
-        torch.arange(RESOLUTION, device=device),
-        torch.arange(RESOLUTION, device=device),
-        indexing='ij'
+        torch.arange(RESOLUTION, device=device), torch.arange(RESOLUTION, device=device), indexing="ij"
     )
 
     dist = torch.sqrt((x_coords - center_x) ** 2 + (y_coords - center_y) ** 2)
@@ -151,15 +150,18 @@ def main():
             # [density_t, velx_t, vely_t, density_{t-1}]
             # state_current: [density_t, velx_t, vely_t]
             # state_prev: [density_{t-1}, velx_{t-1}, vely_{t-1}]
-            
+
             # fake injecting density like in blender sim
             state_prev[0][circle_mask] += INJECTED_DENSITY
             state_current[0][circle_mask] += INJECTED_DENSITY
-            
-            model_input = torch.cat([
-                state_current,           # [density_t, velx_t, vely_t]
-                state_prev[0:1]         # [density_{t-1}]
-            ], dim=0)  # Shape: (4, H, W)
+
+            model_input = torch.cat(
+                [
+                    state_current,  # [density_t, velx_t, vely_t]
+                    state_prev[0:1],  # [density_{t-1}]
+                ],
+                dim=0,
+            )  # Shape: (4, H, W)
 
             # Add batch dimension
             model_input = model_input.unsqueeze(0)  # Shape: (1, 4, H, W)
@@ -180,7 +182,7 @@ def main():
             if (frame_idx + 1) % 10 == 0:
                 print(f"  Generated frame {frame_idx + 1}/{NUM_FRAMES}")
 
-    print(f"\nGeneration complete. Saving visualizations...")
+    print("\nGeneration complete. Saving visualizations...")
 
     # Render and save all frames as png
     render_density_to_png(
