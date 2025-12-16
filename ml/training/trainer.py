@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 import mlflow
 import torch
 import torch.nn as nn
+from torch.amp.autocast_mode import autocast
+from torch.amp.grad_scaler import GradScaler
 from tqdm import tqdm
 
 if TYPE_CHECKING:
@@ -32,7 +34,7 @@ class Trainer:
         self.optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
         self.criterion = nn.MSELoss()
 
-        self.scaler = torch.amp.GradScaler("cuda") if config.amp_enabled and device == "cuda" else None
+        self.scaler = GradScaler("cuda") if config.amp_enabled and device == "cuda" else None
 
         self.config.checkpoint_dir = self.config.checkpoint_dir / str(model.model_name)
         self.config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -50,7 +52,7 @@ class Trainer:
 
             # Forward pass with AMP
             if self.scaler is not None:
-                with torch.amp.autocast(device_type=self.device):
+                with autocast(device_type=self.device):
                     outputs = self.model(inputs)
                     loss = self.criterion(outputs, targets)
 
