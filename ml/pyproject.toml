@@ -3,10 +3,12 @@ name = "ml"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.13"
 dependencies = [
     "mlflow>=3.7.0",
     "numpy>=2.3.5",
+    "onnx>=1.20.0",
+    "onnxruntime>=1.23.2",
     "pillow>=12.0.0",
     "pydantic-settings>=2.12.0",
     "pyyaml>=6.0.2",
@@ -39,7 +41,7 @@ ignore = [
 ]
 
 [tool.mypy]
-python_version = "3.14"
+python_version = "3.13"
 warn_return_any = true
 warn_unused_configs = true
 warn_unused_ignores = true
@@ -61,15 +63,21 @@ module = "numpy.*"
 ignore_missing_imports = true
 
 [tool.pyright]
-include = ["config", "models", "dataset", "training", "inference", "utils"]
+include = ["config", "models", "dataset", "training", "inference", "utils", "main.py"]
 extraPaths = ["."]
-pythonVersion = "3.14"
+pythonVersion = "3.13"
 pythonPlatform = "Linux"
+typeCheckingMode = "basic"
+useLibraryCodeForTypes = false
 
 [[tool.pyright.overrides]]
 module = "torch.amp"
 reportAttributeAccessIssue = false
 reportPrivateImportUsage = false
+
+[[tool.pyright.overrides]]
+module = "torch.multiprocessing"
+reportAttributeAccessIssue = false
 
 [[tool.mypy.overrides]]
 module = "torch.*"

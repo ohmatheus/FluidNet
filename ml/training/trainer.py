@@ -1,18 +1,15 @@
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import mlflow
 import torch
 import torch.nn as nn
 from torch.amp.autocast_mode import autocast
 from torch.amp.grad_scaler import GradScaler
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-if TYPE_CHECKING:
-    from torch.utils.data import DataLoader
-
-    from config.training_config import TrainingConfig
+from config.training_config import TrainingConfig
 
 
 class Trainer:
@@ -47,7 +44,10 @@ class Trainer:
 
         pbar = tqdm(self.train_loader, desc="Training", leave=False)
         for inputs, targets in pbar:
-            # Data already moved to device in dataset __getitem__
+            # Move data to device
+            inputs = inputs.to(self.device, non_blocking=True)
+            targets = targets.to(self.device, non_blocking=True)
+
             self.optimizer.zero_grad()
 
             # Forward pass with AMP
@@ -82,7 +82,10 @@ class Trainer:
         with torch.no_grad():
             pbar = tqdm(self.val_loader, desc="Validation", leave=False)
             for inputs, targets in pbar:
-                # Data already moved to device in dataset __getitem__
+                # Move data to device
+                inputs = inputs.to(self.device, non_blocking=True)
+                targets = targets.to(self.device, non_blocking=True)
+
                 outputs = self.model(inputs)
                 loss = self.criterion(outputs, targets)
 
