@@ -25,8 +25,15 @@ dev = [
     "types-tqdm>=4.67.0.20250809",
 ]
 
+[project.scripts]
+train = "scripts.train:main"
+simple-infer = "scripts.simple_infer:main"
+
+[tool.uv]
+package = true
+
 [tool.setuptools.packages.find]
-include = ["config", "models", "dataset", "training", "inference", "utils"]
+include = ["config", "models", "dataset", "training", "inference", "utils", "scripts"]
 exclude = [".venv*", ".tox*", "mlruns*", "__pycache__*", "*.egg-info"]
 
 [tool.ruff]
@@ -52,7 +59,7 @@ files = [
     "config",
     "training",
     "inference",
-    "main.py",
+    "scripts",
 ]
 plugins = [
     "pydantic.mypy",
@@ -63,7 +70,7 @@ module = "numpy.*"
 ignore_missing_imports = true
 
 [tool.pyright]
-include = ["config", "models", "dataset", "training", "inference", "utils", "main.py"]
+include = ["config", "models", "dataset", "training", "inference", "utils", "scripts"]
 extraPaths = ["."]
 pythonVersion = "3.13"
 pythonPlatform = "Linux"
