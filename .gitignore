@@ -66,6 +66,7 @@ checkpoints/
 mlflow.db
 mlruns/
 
+data/
 
 #---------------------------------------------------------------------------------
 # Byte-compiled / optimized / DLL files

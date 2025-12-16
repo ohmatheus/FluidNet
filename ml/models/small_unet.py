@@ -12,7 +12,7 @@ class SmallUNet(nn.Module):
       - ConvTranspose2d for upsampling
     """
 
-    model_name: str = "SmallUnet"
+    model_name: str = "SmallUnet"  # ducktyping
 
     def __init__(
         self,

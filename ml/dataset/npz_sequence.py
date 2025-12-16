@@ -21,12 +21,10 @@ class FluidNPZSequenceDataset(Dataset):
         self,
         npz_dir: str | Path,
         normalize: bool = False,
-        device: str = "cpu",
         seq_indices: list[int] | None = None,
     ) -> None:
         self.npz_dir = npz_dir
         self.normalize = normalize
-        self.device = torch.device(device) if device is not None else None
 
         npz_dir_path = Path(npz_dir)
         all_seq_paths: list[Path] = sorted(
@@ -134,9 +132,5 @@ class FluidNPZSequenceDataset(Dataset):
 
         x_t = torch.from_numpy(x)
         y_t = torch.from_numpy(y)
-
-        if self.device is not None:
-            x_t = x_t.to(self.device, non_blocking=False)
-            y_t = y_t.to(self.device, non_blocking=False)
 
         return x_t, y_t

@@ -1,18 +1,16 @@
 import random
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import mlflow
 import numpy as np
 import torch
+import torch.multiprocessing as mp
 from torch.utils.data import DataLoader
 
 from config.training_config import TrainingConfig
 from dataset.npz_sequence import FluidNPZSequenceDataset
 from models.small_unet import SmallUNet
 from training.trainer import Trainer
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def set_seed(seed: int) -> None:
@@ -67,16 +65,12 @@ def main() -> None:
 
     print(f"Dataset splits: train={len(train_idx)}, val={len(val_idx)}, test={len(test_idx)}")
 
-    train_ds = FluidNPZSequenceDataset(
-        npz_dir=config.npz_dir, normalize=config.normalize, device=config.device, seq_indices=train_idx
-    )
-    val_ds = FluidNPZSequenceDataset(
-        npz_dir=config.npz_dir, normalize=config.normalize, device=config.device, seq_indices=val_idx
-    )
+    train_ds = FluidNPZSequenceDataset(npz_dir=config.npz_dir, normalize=config.normalize, seq_indices=train_idx)
+    val_ds = FluidNPZSequenceDataset(npz_dir=config.npz_dir, normalize=config.normalize, seq_indices=val_idx)
 
     # to compare models later
     # test_ds = FluidNPZSequenceDataset(
-    #    npz_dir=config.npz_dir, normalize=config.normalize, device=config.device, seq_indices=test_idx
+    #    npz_dir=config.npz_dir, normalize=config.normalize, seq_indices=test_idx
     # )
 
     print(f"Training samples: {len(train_ds)}, Validation samples: {len(val_ds)}")
@@ -123,4 +117,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # Must be set before any CUDA operations when using DataLoader with num_workers > 0
+    mp.set_start_method("spawn", force=True)
     main()
