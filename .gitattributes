@@ -2,3 +2,5 @@
 *.py linguist-language=Python
 *.cpp linguist-language=C++
 *.h linguist-language=C++
+*.hpp linguist-language=C++
+*.hpp.in linguist-language=C++
