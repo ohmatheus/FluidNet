@@ -50,17 +50,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build clang-tidy build-essential
 
-      - name: Setup vcpkg
-        run: |
-          git clone https://github.com/microsoft/vcpkg.git
-          ./vcpkg/bootstrap-vcpkg.sh
-          ./vcpkg/vcpkg install yaml-cpp
-
       - name: Configure CMake (Debug)
         working-directory: ./engine
         run: |
           cmake -B build -G Ninja \
-            -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake \
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
@@ -77,7 +70,7 @@ jobs:
             echo "$FILES"
             for file in $FILES; do
               echo "Checking $file..."
-              clang-tidy $file -p build -- -Iinclude || exit 1
+              clang-tidy $file -p build || exit 1
             done
           else
             echo "No C++ source files found to lint"
