@@ -7,3 +7,4 @@ ReferenceAlignment: Left
 NamespaceIndentation: None
 AccessModifierOffset: -4
 BreakBeforeBraces: Allman
+FixNamespaceComments: false
