@@ -1,2 +1,14 @@
+general_config:
+  grid_resolution: 128
+  model_path: "./ml/exports/fluid_model.onnx"
+
 simulation:
   grid_resolution: [128, 128, 1]
+
+engine:
+  window_width: 1280
+  window_height: 720
+  onnx_providers:
+    - "CPUExecutionProvider"
+    - "CUDAExecutionProvider"
+  gpu_enabled: true
