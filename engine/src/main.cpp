@@ -53,11 +53,10 @@ int main()
             std::cout << "\nRequested providers from config:\n";
             for (const auto& provider : config.onnx_providers)
             {
-                bool available =
-                    std::find(availableProviders.begin(), availableProviders.end(), provider) !=
-                    availableProviders.end();
-                std::cout << "  - " << provider << ": " << (available ? "Available" : "Not available")
-                          << "\n";
+                bool available = std::find(availableProviders.begin(), availableProviders.end(),
+                                           provider) != availableProviders.end();
+                std::cout << "  - " << provider << ": "
+                          << (available ? "Available" : "Not available") << "\n";
             }
 
             // Session
@@ -66,9 +65,8 @@ int main()
             sessionOpts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
 
             // CUDA provider ?
-            bool cudaAvailable =
-                std::find(availableProviders.begin(), availableProviders.end(), "CUDAExecutionProvider") !=
-                availableProviders.end();
+            bool cudaAvailable = std::find(availableProviders.begin(), availableProviders.end(),
+                                           "CUDAExecutionProvider") != availableProviders.end();
             bool cudaEnabled = false;
             if (config.gpu_enabled && cudaAvailable)
             {
@@ -81,8 +79,8 @@ int main()
                 }
                 catch (const Ort::Exception& e)
                 {
-                    std::cout << "\n!!! CUDA provider available but failed to initialize: " << e.what()
-                              << "\n  Falling back to CPU\n";
+                    std::cout << "\n!!! CUDA provider available but failed to initialize: "
+                              << e.what() << "\n  Falling back to CPU\n";
                 }
             }
             else if (config.gpu_enabled && !cudaAvailable)
@@ -92,7 +90,8 @@ int main()
 
             if (!cudaEnabled)
             {
-                std::cout << (config.gpu_enabled ? "" : "\n") << "Using CPU provider for inference\n";
+                std::cout << (config.gpu_enabled ? "" : "\n")
+                          << "Using CPU provider for inference\n";
             }
 
             std::cout << "--- ONNX Runtime OK ---\n\n";
