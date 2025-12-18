@@ -1,6 +1,6 @@
 general_config:
   grid_resolution: 128
-  model_path: "./ml/exports/fluid_model.onnx"
+  onnx_model_path: "./data/onnx/SmallUnet.onnx"
 
 simulation:
   grid_resolution: [128, 128, 1]

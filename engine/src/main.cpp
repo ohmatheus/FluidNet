@@ -9,6 +9,8 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 
+#include <onnxruntime_cxx_api.h>
+
 static void glfwErrorCallback(int error, const char* description)
 {
     std::cerr << "GLFW Error " << error << ": " << description << "\n";
@@ -31,7 +33,75 @@ int main()
         auto config = FluidNet::EngineConfig::loadFromYaml(configPath.string());
 
         std::cout << "Configuration loaded successfully.\n";
-        std::cout << "Window: " << config.window_width << "x" << config.window_height << "\n\n";
+        std::cout << "Window: " << config.window_width << "x" << config.window_height << "\n";
+
+        // Test ONNX
+        std::cout << "\n--- ONNX Runtime Test ---\n";
+        try
+        {
+            Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "FluidNetEngine");
+            std::cout << "ONNX Runtime initialized successfully\n";
+
+            // Providers
+            std::vector<std::string> availableProviders = Ort::GetAvailableProviders();
+            std::cout << "Available providers (" << availableProviders.size() << "):\n";
+            for (const auto& provider : availableProviders)
+            {
+                std::cout << "  - " << provider << "\n";
+            }
+
+            std::cout << "\nRequested providers from config:\n";
+            for (const auto& provider : config.onnx_providers)
+            {
+                bool available =
+                    std::find(availableProviders.begin(), availableProviders.end(), provider) !=
+                    availableProviders.end();
+                std::cout << "  - " << provider << ": " << (available ? "Available" : "Not available")
+                          << "\n";
+            }
+
+            // Session
+            Ort::SessionOptions sessionOpts;
+            sessionOpts.SetIntraOpNumThreads(1);
+            sessionOpts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
+
+            // CUDA provider ?
+            bool cudaAvailable =
+                std::find(availableProviders.begin(), availableProviders.end(), "CUDAExecutionProvider") !=
+                availableProviders.end();
+            bool cudaEnabled = false;
+            if (config.gpu_enabled && cudaAvailable)
+            {
+                try
+                {
+                    OrtCUDAProviderOptions cudaOpts{};
+                    sessionOpts.AppendExecutionProvider_CUDA(cudaOpts);
+                    cudaEnabled = true;
+                    std::cout << "\nCUDA provider enabled for inference\n";
+                }
+                catch (const Ort::Exception& e)
+                {
+                    std::cout << "\n!!! CUDA provider available but failed to initialize: " << e.what()
+                              << "\n  Falling back to CPU\n";
+                }
+            }
+            else if (config.gpu_enabled && !cudaAvailable)
+            {
+                std::cout << "\n!!! CUDA provider requested but not available, will use CPU\n";
+            }
+
+            if (!cudaEnabled)
+            {
+                std::cout << (config.gpu_enabled ? "" : "\n") << "Using CPU provider for inference\n";
+            }
+
+            std::cout << "--- ONNX Runtime OK ---\n\n";
+        }
+        catch (const Ort::Exception& e)
+        {
+            std::cerr << "ONNX Runtime error: " << e.what() << "\n";
+            throw;
+        }
 
         glfwSetErrorCallback(glfwErrorCallback);
 

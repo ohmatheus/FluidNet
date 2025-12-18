@@ -26,3 +26,6 @@ fluid_engine
 *.su
 *.idb
 *.pdb
+
+
+external/

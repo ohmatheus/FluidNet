@@ -39,7 +39,7 @@ EngineConfig EngineConfig::loadFromYaml(const std::string& path)
         if (config["general_config"])
         {
             const auto& general = config["general_config"];
-            engineConfig.model_path = general["model_path"].as<std::string>();
+            engineConfig.model_path = general["onnx_model_path"].as<std::string>();
             engineConfig.grid_resolution = general["grid_resolution"].as<int>();
         }
         else

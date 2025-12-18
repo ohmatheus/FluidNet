@@ -88,10 +88,56 @@ target_include_directories(fluid_engine PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/include
 )
 
+# ONNX Runtime (manually downloaded to external/onnxruntime)
+set(ONNXRUNTIME_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/external/onnxruntime")
+
+# Check if ONNX Runtime exists
+if(NOT EXISTS "${ONNXRUNTIME_ROOT}/include/onnxruntime_cxx_api.h")
+    message(FATAL_ERROR
+        "ONNX Runtime not found in ${ONNXRUNTIME_ROOT}\n"
+        "Please download and extract ONNX Runtime 1.23.2:\n"
+        "  Linux:   https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-linux-x64-gpu-1.23.2.tgz\n"
+        "  Windows: https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-win-x64-gpu-1.23.2.zip\n"
+        "  macOS:   https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-osx-arm64-1.23.2.tgz (Apple Silicon)\n"
+        "           https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-osx-x86_64-1.23.2.tgz (Intel)\n"
+        "Extract to: engine/external/onnxruntime/\n"
+        "See engine/README.md for detailed instructions.\n"
+    )
+endif()
+
+add_library(onnxruntime SHARED IMPORTED)
+
+if(WIN32)
+    set_target_properties(onnxruntime PROPERTIES
+        IMPORTED_LOCATION "${ONNXRUNTIME_ROOT}/lib/onnxruntime.dll"
+        IMPORTED_IMPLIB "${ONNXRUNTIME_ROOT}/lib/onnxruntime.lib"
+        INTERFACE_INCLUDE_DIRECTORIES "${ONNXRUNTIME_ROOT}/include"
+    )
+elseif(APPLE)
+    set_target_properties(onnxruntime PROPERTIES
+        IMPORTED_LOCATION "${ONNXRUNTIME_ROOT}/lib/libonnxruntime.dylib"
+        INTERFACE_INCLUDE_DIRECTORIES "${ONNXRUNTIME_ROOT}/include"
+    )
+else() # Linux
+    set_target_properties(onnxruntime PROPERTIES
+        IMPORTED_LOCATION "${ONNXRUNTIME_ROOT}/lib/libonnxruntime.so"
+        INTERFACE_INCLUDE_DIRECTORIES "${ONNXRUNTIME_ROOT}/include"
+    )
+endif()
+
+# Set RPATH so executable finds the library at runtime
+set_target_properties(fluid_engine PROPERTIES
+    BUILD_RPATH "${ONNXRUNTIME_ROOT}/lib"
+    INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib"
+)
+
+message(STATUS "ONNX Runtime: ${ONNXRUNTIME_ROOT}")
+
 # Link libraries
 target_link_libraries(fluid_engine PRIVATE
     yaml-cpp::yaml-cpp
     glfw
     OpenGL::GL
     imgui
+    onnxruntime
 )
