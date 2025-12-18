@@ -64,6 +64,15 @@ jobs:
             libx11-dev libxrandr-dev libxinerama-dev \
             libxcursor-dev libxi-dev libgl1-mesa-dev
 
+      - name: Download ONNX Runtime
+        working-directory: ./engine/external
+        run: |
+          mkdir -p onnxruntime && cd onnxruntime
+          wget -q https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-linux-x64-gpu-1.23.2.tgz
+          tar -xzf onnxruntime-linux-x64-gpu-1.23.2.tgz --strip-components=1
+          ls -la include/onnxruntime_cxx_api.h  # Verify extraction
+          ls -la lib/libonnxruntime.so
+
       - name: Configure CMake (Debug)
         working-directory: ./engine
         run: |
