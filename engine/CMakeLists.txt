@@ -38,6 +38,39 @@ set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "Disable Wayland support, use X11 only")
 
 FetchContent_MakeAvailable(glfw)
 
+# Fetch ImGui dependency
+FetchContent_Declare(
+  imgui
+  GIT_REPOSITORY https://github.com/ocornut/imgui.git
+  GIT_TAG v1.91.8-docking  # Let's try out docks
+)
+
+FetchContent_MakeAvailable(imgui)
+
+# Build ImGui as a static library
+set(IMGUI_DIR ${imgui_SOURCE_DIR})
+
+add_library(imgui STATIC
+    ${IMGUI_DIR}/imgui.cpp
+    ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/imgui_demo.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
+)
+
+target_include_directories(imgui PUBLIC
+    ${IMGUI_DIR}
+    ${IMGUI_DIR}/backends
+)
+
+# ImGui backends need GLFW and OpenGL headers
+target_link_libraries(imgui PUBLIC
+    glfw
+    OpenGL::GL
+)
+
 # Find OpenGL (system library)
 find_package(OpenGL REQUIRED)
 
@@ -60,4 +93,5 @@ target_link_libraries(fluid_engine PRIVATE
     yaml-cpp::yaml-cpp
     glfw
     OpenGL::GL
+    imgui
 )
