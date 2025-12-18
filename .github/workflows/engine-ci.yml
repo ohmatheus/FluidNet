@@ -32,7 +32,19 @@ jobs:
           if [ -n "$FILES" ]; then
             echo "Checking formatting for:"
             echo "$FILES"
-            echo "$FILES" | xargs clang-format --dry-run --Werror
+            if ! echo "$FILES" | xargs clang-format --dry-run --Werror; then
+              echo ""
+              echo "=== Formatting issues found. Showing diffs for each file: ==="
+              echo ""
+              for file in $FILES; do
+                if ! clang-format "$file" | diff -u "$file" - > /dev/null 2>&1; then
+                  echo "--- $file ---"
+                  clang-format "$file" | diff -u "$file" - || true
+                  echo ""
+                fi
+              done
+              exit 1
+            fi
           else
             echo "No C++ files found to format"
           fi
@@ -48,7 +60,9 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build clang-tidy build-essential
+          sudo apt-get install -y cmake ninja-build clang-tidy build-essential \
+            libx11-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev libgl1-mesa-dev
 
       - name: Configure CMake (Debug)
         working-directory: ./engine
@@ -70,7 +84,7 @@ jobs:
             echo "$FILES"
             for file in $FILES; do
               echo "Checking $file..."
-              clang-tidy $file -p build || exit 1
+              clang-tidy $file -p build --format-style=file --use-color || exit 1
             done
           else
             echo "No C++ source files found to lint"

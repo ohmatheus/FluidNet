@@ -14,13 +14,32 @@ FetchContent_Declare(
   GIT_TAG 0.8.0  # Use specific version tag for reproducibility
 )
 
-# Configure yaml-cpp build options before making it available
+# Configure yaml-cpp build
 set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "Disable yaml-cpp tests")
 set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "Disable yaml-cpp tools")
 set(YAML_CPP_BUILD_CONTRIB OFF CACHE BOOL "Disable yaml-cpp contrib")
 set(YAML_BUILD_SHARED_LIBS OFF CACHE BOOL "Build yaml-cpp as static library")
 
 FetchContent_MakeAvailable(yaml-cpp)
+
+# Fetch GLFW3 dependency
+FetchContent_Declare(
+  glfw
+  GIT_REPOSITORY https://github.com/glfw/glfw.git
+  GIT_TAG 3.4
+)
+
+# Configure GLFW build
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "Disable GLFW tests")
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "Disable GLFW examples")
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "Disable GLFW documentation")
+set(GLFW_INSTALL OFF CACHE BOOL "Disable GLFW installation")
+set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "Disable Wayland support, use X11 only")
+
+FetchContent_MakeAvailable(glfw)
+
+# Find OpenGL (system library)
+find_package(OpenGL REQUIRED)
 
 file(GLOB_RECURSE SOURCES "src/*.cpp")
 
@@ -39,4 +58,6 @@ target_include_directories(fluid_engine PRIVATE
 # Link libraries
 target_link_libraries(fluid_engine PRIVATE
     yaml-cpp::yaml-cpp
+    glfw
+    OpenGL::GL
 )
