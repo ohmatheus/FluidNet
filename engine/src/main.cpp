@@ -1,6 +1,7 @@
 #include "Config.hpp"
 #include "EngineConfig.hpp"
 #include <GLFW/glfw3.h>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -93,6 +94,70 @@ int main()
                 std::cout << (config.gpu_enabled ? "" : "\n")
                           << "Using CPU provider for inference\n";
             }
+
+            // Dummy inference test
+            std::cout << "\n--- Running Dummy Inference Test ---\n";
+
+            // Load model
+            std::filesystem::path modelPath =
+                std::filesystem::path(FluidNet::PROJECT_ROOT) / config.model_path;
+            std::cout << "Loading model: " << modelPath << "\n";
+
+            Ort::Session session(env, modelPath.c_str(), sessionOpts);
+            std::cout << "Model loaded successfully\n";
+
+            const int64_t batch_size = 1;
+            const int64_t input_channels = 4;
+            const int64_t height = config.grid_resolution;
+            const int64_t width = config.grid_resolution;
+
+            std::array<int64_t, 4> input_shape = {batch_size, input_channels, height, width};
+            size_t input_tensor_size = batch_size * input_channels * height * width;
+            std::vector<float> input_data(input_tensor_size, 0.5f); // Dummy data
+
+            std::cout << "Input shape: [" << batch_size << ", " << input_channels << ", " << height
+                      << ", " << width << "]\n";
+            std::cout << "Input tensor size: " << input_tensor_size << " elements\n";
+
+            auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+            Ort::Value input_tensor =
+                Ort::Value::CreateTensor<float>(memory_info, input_data.data(), input_data.size(),
+                                                input_shape.data(), input_shape.size());
+
+            // Run inference
+            const char* input_names[] = {"input"};
+            const char* output_names[] = {"output"};
+
+            // Warm-up run (avoid 1st run initialisation time overhead in clock) - to remove later
+            std::cout << "Warming up...\n";
+            session.Run(Ort::RunOptions{nullptr}, input_names, &input_tensor, 1, output_names, 1);
+
+            std::cout << "Running timed inference...\n";
+            auto start = std::chrono::high_resolution_clock::now();
+
+            auto output_tensors = session.Run(Ort::RunOptions{nullptr}, input_names, &input_tensor,
+                                              1, output_names, 1);
+
+            auto end = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+            std::cout << "Inference completed in " << duration.count() << " ms\n";
+
+            // Extract output
+            float* output_data = output_tensors[0].GetTensorMutableData<float>();
+            auto output_shape = output_tensors[0].GetTensorTypeAndShapeInfo().GetShape();
+
+            std::cout << "Output shape: [";
+            for (size_t i = 0; i < output_shape.size(); ++i)
+            {
+                std::cout << output_shape[i];
+                if (i < output_shape.size() - 1)
+                    std::cout << ", ";
+            }
+            std::cout << "]\n";
+
+            std::cout << "Device used: " << (cudaEnabled ? "GPU (CUDA)" : "CPU") << "\n";
+            std::cout << "--- Dummy Inference Test OK ---\n\n";
 
             std::cout << "--- ONNX Runtime OK ---\n\n";
         }
