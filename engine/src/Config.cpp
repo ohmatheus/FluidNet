@@ -65,7 +65,8 @@ void Config::loadFromYaml(const std::string& path)
 
             if (models["folder"])
             {
-                m_modelsFolder = Paths::getProjectRoot() / std::filesystem::path(models["folder"].as<std::string>());
+                m_modelsFolder = Paths::getProjectRoot() /
+                                 std::filesystem::path(models["folder"].as<std::string>());
             }
 
             if (models["default_index"])
