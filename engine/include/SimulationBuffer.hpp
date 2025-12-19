@@ -8,9 +8,9 @@ namespace FluidNet
 
 struct SimulationBuffer
 {
+    std::vector<float> density;
     std::vector<float> velocityX;
     std::vector<float> velocityY;
-    std::vector<float> density;
 
     int gridResolution{128};
     uint64_t frameNumber{0};
