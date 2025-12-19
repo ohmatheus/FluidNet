@@ -1,32 +1,41 @@
 #include "Config.hpp"
+#include "EngineConfig.hpp"
 #include <stdexcept>
 #include <yaml-cpp/yaml.h>
 
 namespace FluidNet
 {
 
-EngineConfig EngineConfig::loadFromYaml(const std::string& path)
+Config& Config::getInstance()
+{
+    static Config instance;
+    return instance;
+}
+
+void Config::loadFromYaml(const std::string& path)
 {
     try
     {
         YAML::Node config = YAML::LoadFile(path);
 
-        EngineConfig engineConfig;
-
-        // Load engine-specific settings
         if (config["engine"])
         {
             const auto& engine = config["engine"];
-            engineConfig.window_width = engine["window_width"].as<int>();
-            engineConfig.window_height = engine["window_height"].as<int>();
-            engineConfig.gpu_enabled = engine["gpu_enabled"].as<bool>();
+            m_windowWidth = engine["window_width"].as<int>();
+            m_windowHeight = engine["window_height"].as<int>();
+            m_gpuEnabled = engine["gpu_enabled"].as<bool>();
 
-            // Load ONNX providers
+            if (engine["vsync"])
+            {
+                m_vsyncEnabled = engine["vsync"].as<bool>();
+            }
+
+            m_onnxProviders.clear();
             if (engine["onnx_providers"])
             {
                 for (const auto& provider : engine["onnx_providers"])
                 {
-                    engineConfig.onnx_providers.push_back(provider.as<std::string>());
+                    m_onnxProviders.push_back(provider.as<std::string>());
                 }
             }
         }
@@ -35,19 +44,35 @@ EngineConfig EngineConfig::loadFromYaml(const std::string& path)
             throw std::runtime_error("Missing 'engine' section in config file");
         }
 
-        // Load general config settings
-        if (config["general_config"])
+        if (config["simulation"])
         {
-            const auto& general = config["general_config"];
-            engineConfig.model_path = general["onnx_model_path"].as<std::string>();
-            engineConfig.grid_resolution = general["grid_resolution"].as<int>();
-        }
-        else
-        {
-            throw std::runtime_error("Missing 'general_config' section in config file");
+            const auto& simulation = config["simulation"];
+
+            if (simulation["fps"])
+            {
+                m_simulationFPS = simulation["fps"].as<float>();
+            }
+
+            if (simulation["grid_resolution"])
+            {
+                m_gridResolution = simulation["grid_resolution"].as<int>();
+            }
         }
 
-        return engineConfig;
+        if (config["models"])
+        {
+            const auto& models = config["models"];
+
+            if (models["folder"])
+            {
+                m_modelsFolder = Paths::getProjectRoot() / std::filesystem::path(models["folder"].as<std::string>());
+            }
+
+            if (models["default_index"])
+            {
+                m_defaultModelIndex = models["default_index"].as<int>();
+            }
+        }
     }
     catch (const YAML::Exception& e)
     {

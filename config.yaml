@@ -1,13 +1,15 @@
-general_config:
-  grid_resolution: 128
-  onnx_model_path: "./data/onnx/SmallUnet.onnx"
+models:
+  folder: "./data/onnx"
+  default_index: 0
 
 simulation:
-  grid_resolution: [128, 128, 1]
+  fps: 30.0
+  grid_resolution: 128
 
 engine:
   window_width: 1280
   window_height: 720
+  vsync: false
   onnx_providers:
     - "CPUExecutionProvider"
     - "CUDAExecutionProvider"
