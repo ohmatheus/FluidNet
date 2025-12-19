@@ -1,8 +1,38 @@
 #pragma once
 
+#include <filesystem>
+
 namespace FluidNet
 {
 
-    inline constexpr const char* PROJECT_ROOT = "${CMAKE_CURRENT_SOURCE_DIR}/..";
+inline const std::filesystem::path PROJECT_ROOT = std::filesystem::path("${CMAKE_CURRENT_SOURCE_DIR}/..");
+
+namespace Paths
+{
+    inline std::filesystem::path getProjectRoot()
+    {
+        return PROJECT_ROOT;
+    }
+
+    inline std::filesystem::path getEngineRoot()
+    {
+        return PROJECT_ROOT / "engine";
+    }
+
+    inline std::filesystem::path getShaderDir()
+    {
+        return getEngineRoot() / "shaders";
+    }
+
+    inline std::filesystem::path getConfigFile()
+    {
+        return PROJECT_ROOT / "config.yaml";
+    }
+
+    inline std::filesystem::path getDataDir()
+    {
+        return PROJECT_ROOT / "data";
+    }
+}
 
 }
