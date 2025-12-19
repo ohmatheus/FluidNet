@@ -74,7 +74,20 @@ target_link_libraries(imgui PUBLIC
 # Find OpenGL (system library)
 find_package(OpenGL REQUIRED)
 
-file(GLOB_RECURSE SOURCES "src/*.cpp")
+# Find Threads library (required for std::thread)
+find_package(Threads REQUIRED)
+
+# List source files explicitly for better build control
+set(SOURCES
+    src/main.cpp
+    src/Config.cpp
+    src/Engine.cpp
+    src/FluidScene.cpp
+    src/Simulation.cpp
+    src/SimulationBuffer.cpp
+    src/Renderer.cpp
+    src/ModelRegistry.cpp
+)
 
 add_executable(fluid_engine ${SOURCES})
 
@@ -140,4 +153,5 @@ target_link_libraries(fluid_engine PRIVATE
     OpenGL::GL
     imgui
     onnxruntime
+    Threads::Threads
 )
