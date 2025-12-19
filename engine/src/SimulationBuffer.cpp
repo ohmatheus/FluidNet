@@ -1,0 +1,20 @@
+#include "SimulationBuffer.hpp"
+
+namespace FluidNet
+{
+
+void SimulationBuffer::allocate(int resolution)
+{
+    gridResolution = resolution;
+    size_t size = resolution * resolution;
+
+    velocityX.resize(size, 0.0f);
+    velocityY.resize(size, 0.0f);
+    density.resize(size, 0.0f);
+
+    frameNumber = 0;
+    timestamp = 0.0;
+    isDirty = true;
+}
+
+}
