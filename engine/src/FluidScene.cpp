@@ -62,7 +62,6 @@ void FluidScene::onShutdown()
 
 void FluidScene::onUpdate(float deltaTime)
 {
-    // Get latest simulation state
     if (m_simulation)
     {
         m_latestState = m_simulation->getLatestState();
@@ -71,7 +70,6 @@ void FluidScene::onUpdate(float deltaTime)
 
 void FluidScene::render()
 {
-    // Render simulation state
     if (m_renderer && m_latestState)
     {
         m_renderer->render(*m_latestState);

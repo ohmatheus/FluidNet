@@ -3,7 +3,6 @@
 #include "SimulationBuffer.hpp"
 #include <atomic>
 #include <memory>
-#include <mutex>
 #include <onnxruntime_cxx_api.h>
 #include <string>
 #include <thread>
@@ -28,7 +27,7 @@ public:
 
 private:
     void workerLoop_();
-    void runInferenceStep_();
+    void runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer* backBuf);
     void initializeOnnxSession_(const std::string& modelPath, bool useGpu);
 
     std::unique_ptr<Ort::Env> m_ortEnv;
@@ -39,9 +38,9 @@ private:
     std::atomic<bool> m_running{false};
 
     // Double buffering with pointers swap
-    std::unique_ptr<SimulationBuffer> m_frontBuffer;
-    std::unique_ptr<SimulationBuffer> m_backBuffer;
-    std::mutex m_bufferMutex;
+    SimulationBuffer m_bufferA;
+    SimulationBuffer m_bufferB;
+    std::atomic<SimulationBuffer*> m_front;
 
     bool m_useGpu{true};
     std::string m_currentModelPath;

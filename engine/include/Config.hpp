@@ -19,7 +19,6 @@ public:
 
     void loadFromYaml(const std::string& path);
 
-    // Engine settings
     int getWindowWidth() const
     {
         return m_windowWidth;

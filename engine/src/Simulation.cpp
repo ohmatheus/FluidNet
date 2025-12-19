@@ -5,6 +5,58 @@
 #include <filesystem>
 #include <iostream>
 
+namespace
+{
+constexpr bool kEnableDebugDensityInjector = true;
+
+// Continuously inject density in a circle at center-bottom of the grid
+void injectDebugDensityCircle(FluidNet::SimulationBuffer& current,
+                              FluidNet::SimulationBuffer& previous)
+{
+    if (!kEnableDebugDensityInjector)
+    {
+        return;
+    }
+
+    const int gridRes = current.gridResolution;
+    if (gridRes <= 0)
+    {
+        return;
+    }
+
+    const float injectedDensity = 0.8f;
+    const int radius = 20;
+    const int centerX = gridRes / 2;
+    const int centerY = gridRes / 2 + 30;
+
+    const int radiusSq = radius * radius;
+
+    const size_t planeSize = static_cast<size_t>(gridRes) * static_cast<size_t>(gridRes);
+    if (current.density.size() != planeSize || previous.density.size() != planeSize)
+    {
+        return; // sizes not as expected, avoid UB in debug utility
+    }
+
+    for (int y = 0; y < gridRes; ++y)
+    {
+        const int dy = y - centerY;
+        for (int x = 0; x < gridRes; ++x)
+        {
+            const int dx = x - centerX;
+            const int distSq = dx * dx + dy * dy;
+            if (distSq <= radiusSq)
+            {
+                const size_t idx =
+                    static_cast<size_t>(y) * static_cast<size_t>(gridRes) + static_cast<size_t>(x);
+
+                current.density[idx] += injectedDensity;
+                previous.density[idx] += injectedDensity; // density_{t-1}
+            }
+        }
+    }
+}
+} // namespace
+
 namespace FluidNet
 {
 
@@ -15,10 +67,10 @@ Simulation::Simulation()
     m_useGpu = config.isGpuEnabled();
 
     int resolution = config.getGridResolution();
-    m_frontBuffer = std::make_unique<SimulationBuffer>();
-    m_backBuffer = std::make_unique<SimulationBuffer>();
-    m_frontBuffer->allocate(resolution);
-    m_backBuffer->allocate(resolution);
+
+    m_bufferA.allocate(resolution);
+    m_bufferB.allocate(resolution);
+    m_front.store(&m_bufferA, std::memory_order_release);
 
     // Initialize ONNX Runtime
     m_ortEnv = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "FluidNetEngine");
@@ -106,9 +158,10 @@ void Simulation::restart()
     int resolution = config.getGridResolution();
 
     {
-        std::lock_guard<std::mutex> lock(m_bufferMutex);
-        m_frontBuffer->allocate(resolution);
-        m_backBuffer->allocate(resolution);
+        m_bufferA.allocate(resolution);
+        m_bufferB.allocate(resolution);
+
+        m_front.store(&m_bufferA, std::memory_order_release);
     }
 }
 
@@ -141,9 +194,8 @@ void Simulation::toggleGpuMode()
 
 const SimulationBuffer* Simulation::getLatestState() const
 {
-    // No lock needed - just returning a pointer
-    // The pointer itself is atomic (won't change during read)
-    return m_frontBuffer.get();
+    // Atomic load: which buffer is currently "front"
+    return m_front.load(std::memory_order_acquire);
 }
 
 void Simulation::workerLoop_()
@@ -156,13 +208,15 @@ void Simulation::workerLoop_()
 
         if (m_ortSession)
         {
-            runInferenceStep_();
-        }
+            SimulationBuffer* frontBuf = m_front.load(std::memory_order_acquire);
+            SimulationBuffer* backBuf = (frontBuf == &m_bufferA) ? &m_bufferB : &m_bufferA;
 
-        // Swap buffers
-        {
-            std::lock_guard<std::mutex> lock(m_bufferMutex);
-            std::swap(m_frontBuffer, m_backBuffer);
+            // frontBuf:  density(t), vel(t)
+            // backBuf:   density(t-1)
+            // After this call, backBuf will contain t+1
+            runInferenceStep_(frontBuf, backBuf);
+
+            m_front.store(backBuf, std::memory_order_release);
         }
 
         // fixed FPS
@@ -176,16 +230,37 @@ void Simulation::workerLoop_()
     }
 }
 
-void Simulation::runInferenceStep_()
+void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer* backBuf)
 {
+    // frontBuf->density: density_t
+    // backBuf->density:  density_{t-1}
     try
     {
-        // Prepare input tensor (dummy data for now)
-        const int gridRes = m_backBuffer->gridResolution;
-        const int64_t inputShape[] = {1, 4, gridRes, gridRes}; // [batch, channels, height, width]
-        const size_t inputSize = 1 * 4 * gridRes * gridRes;
+        const int gridRes = frontBuf->gridResolution;
+        const size_t planeSize = static_cast<size_t>(gridRes) * static_cast<size_t>(gridRes);
 
-        std::vector<float> inputData(inputSize, 0.5f); // Dummy data
+        // Debug: continuously inject density in a circle
+        injectDebugDensityCircle(*frontBuf, *backBuf);
+
+        // Model input: (1, 4, H, W) = [density_t, velx_t, vely_t, density_{t-1}]
+        const int64_t inputShape[] = {1, 4, gridRes, gridRes};
+        const size_t inputSize = static_cast<size_t>(4) * planeSize;
+
+        std::vector<float> inputData(inputSize);
+
+        // Channel 0: density_t  (front)
+        std::memcpy(&inputData[0 * planeSize], frontBuf->density.data(), planeSize * sizeof(float));
+
+        // Channel 1: velx_t     (front)
+        std::memcpy(&inputData[1 * planeSize], frontBuf->velocityX.data(),
+                    planeSize * sizeof(float));
+
+        // Channel 2: vely_t     (front)
+        std::memcpy(&inputData[2 * planeSize], frontBuf->velocityY.data(),
+                    planeSize * sizeof(float));
+
+        // Channel 3: density_{t-1}  (back)
+        std::memcpy(&inputData[3 * planeSize], backBuf->density.data(), planeSize * sizeof(float));
 
         // Create input tensor
         auto memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
@@ -203,26 +278,51 @@ void Simulation::runInferenceStep_()
         auto outputTensors = m_ortSession->Run(Ort::RunOptions{nullptr}, inputNames, &inputTensor,
                                                1, outputNames, 1);
 
-        // Extract output
+        // Extract output: [1, 3, H, W] = [density_{t+1}, velx_{t+1}, vely_{t+1}]
         if (!outputTensors.empty())
         {
             float* outputData = outputTensors[0].GetTensorMutableData<float>();
             std::vector<int64_t> outputShape =
                 outputTensors[0].GetTensorTypeAndShapeInfo().GetShape();
 
-            // Assuming output is [1, 3, gridRes, gridRes] for [density, velocityX, velocityY, ]
-            const size_t planeSize = gridRes * gridRes;
+            // Basic sanity check (optional)
+            if (outputShape.size() != 4 || outputShape[0] != 1 || outputShape[1] != 3 ||
+                outputShape[2] != gridRes || outputShape[3] != gridRes)
+            {
+                std::cerr << "Unexpected ONNX output shape: [";
+                for (size_t i = 0; i < outputShape.size(); ++i)
+                {
+                    std::cerr << outputShape[i] << (i + 1 < outputShape.size() ? "," : "");
+                }
+                std::cerr << "]\n";
+                return;
+            }
+
+            // Ensure buffers have correct size
+            if (backBuf->density.size() != planeSize)
+            {
+                backBuf->density.resize(planeSize);
+            }
+            if (backBuf->velocityX.size() != planeSize)
+            {
+                backBuf->velocityX.resize(planeSize);
+            }
+            if (backBuf->velocityY.size() != planeSize)
+            {
+                backBuf->velocityY.resize(planeSize);
+            }
 
             for (size_t i = 0; i < planeSize; ++i)
             {
-                m_backBuffer->density[i] = outputData[i];
-                m_backBuffer->velocityX[i] = outputData[planeSize + i];
-                m_backBuffer->velocityY[i] = outputData[2 * planeSize + i];
+                backBuf->density[i] = outputData[0 * planeSize + i];   // density_{t+1}
+                backBuf->velocityX[i] = outputData[1 * planeSize + i]; // velx_{t+1}
+                backBuf->velocityY[i] = outputData[2 * planeSize + i]; // vely_{t+1}
             }
 
-            m_backBuffer->frameNumber++;
-            m_backBuffer->timestamp = glfwGetTime(); // TODO: Use proper timer
-            m_backBuffer->isDirty = true;
+            // Metadata
+            backBuf->frameNumber = frontBuf->frameNumber + 1;
+            backBuf->timestamp = glfwGetTime(); // TODO: better timer
+            backBuf->isDirty = true;
         }
     }
     catch (const std::exception& e)

@@ -65,6 +65,47 @@ void loadGLFunctions()
     glUniform1i = (PFNGLUNIFORM1IPROC)glfwGetProcAddress("glUniform1i");
 }
 
+namespace
+{
+constexpr bool kEnableDebugDensityVisNormalization = true;
+
+void normalizeDensityForDisplay(std::vector<float>& density)
+{
+    if (!kEnableDebugDensityVisNormalization || density.empty())
+    {
+        return;
+    }
+
+    float dMin = density[0];
+    float dMax = density[0];
+    for (float v : density)
+    {
+        if (v < dMin)
+            dMin = v;
+        if (v > dMax)
+            dMax = v;
+    }
+
+    const float span = dMax - dMin;
+    if (span <= 1e-8f)
+    {
+        std::fill(density.begin(), density.end(), 0.0f);
+        return;
+    }
+
+    const float invSpan = 1.0f / span;
+    for (float& v : density)
+    {
+        float n = (v - dMin) * invSpan; // map to [0,1]
+        if (n < 0.0f)
+            n = 0.0f;
+        if (n > 1.0f)
+            n = 1.0f;
+        v = n;
+    }
+}
+}
+
 std::string readShaderFile(const std::string& filepath)
 {
     std::ifstream file(filepath);
@@ -226,10 +267,15 @@ void Renderer::compileShaders_()
 
 void Renderer::createQuad_()
 {
-    // quad, position & texture
-    float vertices[] = {-1.0f, 1.0f, 0.0f, 1.0f, -1.0f, -1.0f, 0.0f, 0.0f, 1.0f, -1.0f, 1.0f, 0.0f,
-
-                        -1.0f, 1.0f, 0.0f, 1.0f, 1.0f,  -1.0f, 1.0f, 0.0f, 1.0f, 1.0f,  1.0f, 1.0f};
+    // quad, position & flipped texture coordinates (v -> 1 - v)
+    float vertices[] = {
+        -1.0f, 1.0f,  0.0f, 0.0f, // top-left  -> (0,0)
+        -1.0f, -1.0f, 0.0f, 1.0f, // bottom-left -> (0,1)
+        1.0f,  -1.0f, 1.0f, 1.0f, // bottom-right -> (1,1)
+        -1.0f, 1.0f,  0.0f, 0.0f, // top-left
+        1.0f,  -1.0f, 1.0f, 1.0f, // bottom-right
+        1.0f,  1.0f,  1.0f, 0.0f  // top-right -> (1,0)
+    };
 
     glGenVertexArrays(1, &m_vao);
     glGenBuffers(1, &m_vbo);
@@ -265,9 +311,15 @@ void Renderer::uploadToGPU_(const SimulationBuffer& state)
     glBindTexture(GL_TEXTURE_2D, m_velocityTexture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RG32F, res, res, 0, GL_RG, GL_FLOAT, velocityRG.data());
 
+    std::vector<float> densityVis = state.density;
+
+    // Debug-only normalization of *model output for display*.
+    // Comment this line to see raw density values instead.
+    normalizeDensityForDisplay(densityVis);
+
     // Upload density as R texture
     glBindTexture(GL_TEXTURE_2D, m_densityTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, res, res, 0, GL_RED, GL_FLOAT, state.density.data());
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, res, res, 0, GL_RED, GL_FLOAT, densityVis.data());
 }
 
 void Renderer::render(const SimulationBuffer& state)

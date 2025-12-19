@@ -3,12 +3,12 @@ models:
   default_index: 0
 
 simulation:
-  fps: 30.0
+  fps: 15.0
   grid_resolution: 128
 
 engine:
-  window_width: 1280
-  window_height: 720
+  window_width: 800
+  window_height: 800
   vsync: false
   onnx_providers:
     - "CPUExecutionProvider"
