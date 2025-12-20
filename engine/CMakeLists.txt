@@ -87,6 +87,7 @@ set(SOURCES
     src/SimulationBuffer.cpp
     src/Renderer.cpp
     src/ModelRegistry.cpp
+    src/GLLoader.cpp
 )
 
 add_executable(fluid_engine ${SOURCES})
