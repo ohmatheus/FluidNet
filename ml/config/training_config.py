@@ -2,7 +2,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from config.config import project_config, PROJECT_ROOT_PATH
+from config.config import PROJECT_ROOT_PATH, project_config
 
 
 class TrainingConfig(BaseModel):
