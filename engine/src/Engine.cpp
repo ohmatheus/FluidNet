@@ -3,11 +3,23 @@
 #include "FluidScene.hpp"
 #include "ModelRegistry.hpp"
 #include "Scene.hpp"
+#include <GL/gl.h>
+#include <GL/glext.h>
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_opengl3.h>
 #include <chrono>
 #include <imgui.h>
 #include <iostream>
+
+namespace
+{
+PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer = nullptr;
+
+void loadGLFunctions()
+{
+    glBindFramebuffer = (PFNGLBINDFRAMEBUFFERPROC)glfwGetProcAddress("glBindFramebuffer");
+}
+}
 
 void FluidNet::Engine::errorCallback(int error, const char* description)
 {
@@ -70,6 +82,9 @@ void Engine::initialize()
 
     glfwMakeContextCurrent(m_window);
 
+    // Load GL functions
+    loadGLFunctions();
+
     // no need for vsync
     glfwSwapInterval(0);
 
@@ -78,6 +93,7 @@ void Engine::initialize()
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
     ImGui::StyleColorsDark();
 
@@ -126,11 +142,33 @@ void Engine::renderFrame_()
         m_currentScene->onUpdate(deltaTime);
     }
 
-    // ImGui
+    // Start ImGui frame
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
+    // Create fullscreen dockspace
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->Pos);
+    ImGui::SetNextWindowSize(viewport->Size);
+    ImGui::SetNextWindowViewport(viewport->ID);
+
+    ImGuiWindowFlags window_flags =
+        ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::Begin("DockSpace", nullptr, window_flags);
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+
+    ImGuiID dockspace_id = ImGui::GetID("MainDockspace");
+    ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f));
+    ImGui::End();
+
+    // Engine debug window (dockable)
     ImGui::Begin("Engine");
     ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
     ImGui::Text("Frame Time: %.2f ms", deltaTime * 1000.0f);
@@ -143,7 +181,7 @@ void Engine::renderFrame_()
         }
     }
 
-    // Model selector - maybe move this to scene
+    // Model selector
     if (!m_modelRegistry->getModels().empty())
     {
         const auto& models = m_modelRegistry->getModels();
@@ -157,7 +195,6 @@ void Engine::renderFrame_()
                 if (ImGui::Selectable(models[i].name.c_str(), selected))
                 {
                     m_modelRegistry->selectModel(i);
-                    // TODO: Notify scene of model change
                 }
                 if (selected)
                 {
@@ -167,22 +204,61 @@ void Engine::renderFrame_()
             ImGui::EndCombo();
         }
     }
-
     ImGui::End();
 
+    // Scene UI (dockable)
     if (m_currentScene)
     {
         m_currentScene->onRenderUI();
     }
 
-    ImGui::Render();
+    // Simulation Viewport Window (dockable, fixed 800x800)
+    ImGui::SetNextWindowSize(ImVec2(800.0f, 800.0f), ImGuiCond_Always);
+    ImGui::Begin("Viewport");
+    ImVec2 viewportSize = ImVec2(800.0f, 800.0f);
 
-    glClear(GL_COLOR_BUFFER_BIT);
-
+    // Render simulation to framebuffer
     if (m_currentScene)
     {
-        m_currentScene->render();
+        if (auto* fluidScene = dynamic_cast<FluidScene*>(m_currentScene.get()))
+        {
+            if (auto* renderer = fluidScene->getRenderer())
+            {
+                // Resize framebuffer if viewport size changed
+                renderer->resizeFramebuffer((int)viewportSize.x, (int)viewportSize.y);
+
+                // Render to framebuffer
+                m_currentScene->render();
+
+                // Display framebuffer texture
+                GLuint texID = renderer->getFramebufferTexture();
+                ImGui::Image((ImTextureID)(intptr_t)texID, viewportSize, ImVec2(0, 1),
+                             ImVec2(1, 0));
+
+                // Handle mouse input for simulation
+                if (ImGui::IsItemHovered())
+                {
+                    ImVec2 mousePos = ImGui::GetMousePos();
+                    ImVec2 imageMin = ImGui::GetItemRectMin();
+                    ImVec2 relativePos = ImVec2(mousePos.x - imageMin.x, mousePos.y - imageMin.y);
+
+                    // TODO: Forward relativePos to simulation input handling
+                    // Example: fluidScene->handleMouseInput(relativePos.x, relativePos.y);
+                }
+            }
+        }
     }
+    ImGui::End();
+
+    // Render ImGui
+    ImGui::Render();
+
+    // Clear screen and render ImGui to screen
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    int display_w, display_h;
+    glfwGetFramebufferSize(m_window, &display_w, &display_h);
+    glViewport(0, 0, display_w, display_h);
+    glClear(GL_COLOR_BUFFER_BIT);
 
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 

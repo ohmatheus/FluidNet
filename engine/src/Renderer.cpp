@@ -34,6 +34,11 @@ PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer = nullptr;
 PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray = nullptr;
 PFNGLGETUNIFORMLOCATIONPROC glGetUniformLocation = nullptr;
 PFNGLUNIFORM1IPROC glUniform1i = nullptr;
+PFNGLGENFRAMEBUFFERSPROC glGenFramebuffers = nullptr;
+PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer = nullptr;
+PFNGLFRAMEBUFFERTEXTURE2DPROC glFramebufferTexture2D = nullptr;
+PFNGLCHECKFRAMEBUFFERSTATUSPROC glCheckFramebufferStatus = nullptr;
+PFNGLDELETEFRAMEBUFFERSPROC glDeleteFramebuffers = nullptr;
 
 void loadGLFunctions()
 {
@@ -63,6 +68,13 @@ void loadGLFunctions()
         (PFNGLENABLEVERTEXATTRIBARRAYPROC)glfwGetProcAddress("glEnableVertexAttribArray");
     glGetUniformLocation = (PFNGLGETUNIFORMLOCATIONPROC)glfwGetProcAddress("glGetUniformLocation");
     glUniform1i = (PFNGLUNIFORM1IPROC)glfwGetProcAddress("glUniform1i");
+    glGenFramebuffers = (PFNGLGENFRAMEBUFFERSPROC)glfwGetProcAddress("glGenFramebuffers");
+    glBindFramebuffer = (PFNGLBINDFRAMEBUFFERPROC)glfwGetProcAddress("glBindFramebuffer");
+    glFramebufferTexture2D =
+        (PFNGLFRAMEBUFFERTEXTURE2DPROC)glfwGetProcAddress("glFramebufferTexture2D");
+    glCheckFramebufferStatus =
+        (PFNGLCHECKFRAMEBUFFERSTATUSPROC)glfwGetProcAddress("glCheckFramebufferStatus");
+    glDeleteFramebuffers = (PFNGLDELETEFRAMEBUFFERSPROC)glfwGetProcAddress("glDeleteFramebuffers");
 }
 
 namespace
@@ -158,6 +170,26 @@ void Renderer::initialize()
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
+        // Create framebuffer for offscreen rendering
+        glGenFramebuffers(1, &m_framebuffer);
+        glBindFramebuffer(GL_FRAMEBUFFER, m_framebuffer);
+
+        glGenTextures(1, &m_framebufferTexture);
+        glBindTexture(GL_TEXTURE_2D, m_framebufferTexture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, m_fbWidth, m_fbHeight, 0, GL_RGB, GL_UNSIGNED_BYTE,
+                     nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                               m_framebufferTexture, 0);
+
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        {
+            throw std::runtime_error("Framebuffer not complete!");
+        }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
         m_initialized = true;
     }
     catch (const std::exception& e)
@@ -198,6 +230,18 @@ void Renderer::shutdown()
     {
         glDeleteTextures(1, &m_densityTexture);
         m_densityTexture = 0;
+    }
+
+    if (m_framebuffer)
+    {
+        glDeleteFramebuffers(1, &m_framebuffer);
+        m_framebuffer = 0;
+    }
+
+    if (m_framebufferTexture)
+    {
+        glDeleteTextures(1, &m_framebufferTexture);
+        m_framebufferTexture = 0;
     }
 
     m_initialized = false;
@@ -332,6 +376,11 @@ void Renderer::render(const SimulationBuffer& state)
         uploadToGPU_(state);
     }
 
+    // Bind framebuffer for offscreen rendering
+    glBindFramebuffer(GL_FRAMEBUFFER, m_framebuffer);
+    glViewport(0, 0, m_fbWidth, m_fbHeight);
+    glClear(GL_COLOR_BUFFER_BIT);
+
     glUseProgram(m_shaderProgram);
 
     // Bind density texture
@@ -342,6 +391,24 @@ void Renderer::render(const SimulationBuffer& state)
     glBindVertexArray(m_vao);
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
+
+    // Unbind framebuffer back to screen
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void Renderer::resizeFramebuffer(int width, int height)
+{
+    if (width <= 0 || height <= 0)
+    {
+        return;
+    }
+
+    m_fbWidth = width;
+    m_fbHeight = height;
+
+    glBindTexture(GL_TEXTURE_2D, m_framebufferTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 }

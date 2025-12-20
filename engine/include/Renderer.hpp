@@ -22,6 +22,12 @@ public:
 
     void render(const SimulationBuffer& state);
 
+    GLuint getFramebufferTexture() const
+    {
+        return m_framebufferTexture;
+    }
+    void resizeFramebuffer(int width, int height);
+
 private:
     void uploadToGPU_(const SimulationBuffer& state);
     void compileShaders_();
@@ -35,6 +41,11 @@ private:
     GLuint m_shaderProgram{0};
     GLuint m_velocityTexture{0};
     GLuint m_densityTexture{0};
+
+    GLuint m_framebuffer{0};
+    GLuint m_framebufferTexture{0};
+    int m_fbWidth{512};
+    int m_fbHeight{512};
 
     bool m_initialized{false};
 };
