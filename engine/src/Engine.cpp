@@ -1,5 +1,6 @@
 #include "Engine.hpp"
 #include "Config.hpp"
+#include "FluidScene.hpp"
 #include "ModelRegistry.hpp"
 #include "Scene.hpp"
 #include <backends/imgui_impl_glfw.h>
@@ -132,6 +133,14 @@ void Engine::renderFrame_()
     ImGui::Begin("Engine");
     ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
     ImGui::Text("Frame Time: %.2f ms", deltaTime * 1000.0f);
+
+    if (auto* fluidScene = dynamic_cast<FluidScene*>(m_currentScene.get()))
+    {
+        if (auto* sim = fluidScene->getSimulation())
+        {
+            ImGui::Text("Sim Compute: %.2f ms", sim->getAvgComputeTimeMs());
+        }
+    }
 
     // Model selector - maybe move this to scene
     if (!m_modelRegistry->getModels().empty())

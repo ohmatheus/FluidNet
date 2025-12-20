@@ -313,8 +313,6 @@ void Renderer::uploadToGPU_(const SimulationBuffer& state)
 
     std::vector<float> densityVis = state.density;
 
-    // Debug-only normalization of *model output for display*.
-    // Comment this line to see raw density values instead.
     normalizeDensityForDisplay(densityVis);
 
     // Upload density as R texture

@@ -198,6 +198,11 @@ const SimulationBuffer* Simulation::getLatestState() const
     return m_front.load(std::memory_order_acquire);
 }
 
+float Simulation::getAvgComputeTimeMs() const
+{
+    return m_avgComputeTimeMs.load(std::memory_order_acquire);
+}
+
 void Simulation::workerLoop_()
 {
     using Clock = std::chrono::high_resolution_clock;
@@ -214,9 +219,28 @@ void Simulation::workerLoop_()
             // frontBuf:  density(t), vel(t)
             // backBuf:   density(t-1)
             // After this call, backBuf will contain t+1
+            auto inferenceStart = Clock::now();
             runInferenceStep_(frontBuf, backBuf);
+            auto inferenceEnd = Clock::now();
 
             m_front.store(backBuf, std::memory_order_release);
+
+            // track compute time
+            float inferenceMs =
+                std::chrono::duration<float, std::milli>(inferenceEnd - inferenceStart).count();
+            m_sumComputeTimeMs += inferenceMs;
+            m_computeTimeSamples++;
+
+            // every 1 second
+            double currentTime = glfwGetTime();
+            if (currentTime - m_lastAvgUpdate >= 1.0)
+            {
+                m_avgComputeTimeMs.store(m_sumComputeTimeMs / m_computeTimeSamples,
+                                         std::memory_order_release);
+                m_sumComputeTimeMs = 0.0f;
+                m_computeTimeSamples = 0;
+                m_lastAvgUpdate = currentTime;
+            }
         }
 
         // fixed FPS
