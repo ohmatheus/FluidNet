@@ -70,7 +70,8 @@ void Engine::initialize()
 
     glfwMakeContextCurrent(m_window);
 
-    glfwSwapInterval(config.isVsyncEnabled() ? 1 : 0);
+    // no need for vsync
+    glfwSwapInterval(0);
 
     // Initialize ImGui
     IMGUI_CHECKVERSION();

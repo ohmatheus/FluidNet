@@ -31,10 +31,6 @@ public:
     {
         return m_gpuEnabled;
     }
-    bool isVsyncEnabled() const
-    {
-        return m_vsyncEnabled;
-    }
 
     int getGridResolution() const
     {
@@ -66,7 +62,6 @@ private:
     int m_windowWidth{1280};
     int m_windowHeight{720};
     bool m_gpuEnabled{true};
-    bool m_vsyncEnabled{false};
 
     int m_gridResolution{128};
     float m_simulationFPS{30.0f};
