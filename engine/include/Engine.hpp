@@ -33,6 +33,9 @@ public:
 private:
     void processInput_();
     void renderFrame_();
+    void setupDockspace_();
+    void renderEngineDebugWindow_(float deltaTime);
+    void renderViewportWindow_();
     static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
     static void errorCallback(int error, const char* description);
 

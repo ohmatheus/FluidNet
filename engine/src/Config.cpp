@@ -25,11 +25,6 @@ void Config::loadFromYaml(const std::string& path)
             m_windowHeight = engine["window_height"].as<int>();
             m_gpuEnabled = engine["gpu_enabled"].as<bool>();
 
-            if (engine["vsync"])
-            {
-                m_vsyncEnabled = engine["vsync"].as<bool>();
-            }
-
             m_onnxProviders.clear();
             if (engine["onnx_providers"])
             {
@@ -56,6 +51,11 @@ void Config::loadFromYaml(const std::string& path)
             if (simulation["grid_resolution"])
             {
                 m_gridResolution = simulation["grid_resolution"].as<int>();
+            }
+
+            if (simulation["input_channels"])
+            {
+                m_inputChanels = simulation["input_channels"].as<int>();
             }
         }
 

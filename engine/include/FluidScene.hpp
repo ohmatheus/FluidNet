@@ -27,6 +27,16 @@ public:
 
     void onModelChanged(const std::string& modelPath);
 
+    Simulation* getSimulation() const
+    {
+        return m_simulation.get();
+    }
+
+    Renderer* getRenderer() const
+    {
+        return m_renderer.get();
+    }
+
 private:
     std::unique_ptr<Simulation> m_simulation;
     std::unique_ptr<Renderer> m_renderer;

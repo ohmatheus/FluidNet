@@ -24,6 +24,7 @@ public:
     void toggleGpuMode();
 
     const SimulationBuffer* getLatestState() const;
+    float getAvgComputeTimeMs() const;
 
 private:
     void workerLoop_();
@@ -45,6 +46,12 @@ private:
     bool m_useGpu{true};
     std::string m_currentModelPath;
     float m_targetStepTime{0.0f};
+
+    // Timing metrics
+    std::atomic<float> m_avgComputeTimeMs{0.0f};
+    float m_sumComputeTimeMs{0.0f};
+    int m_computeTimeSamples{0};
+    double m_lastAvgUpdate{0.0};
 };
 
 }

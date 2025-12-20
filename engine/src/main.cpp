@@ -13,7 +13,6 @@ int main()
         FluidNet::Config::getInstance().loadFromYaml(FluidNet::Paths::getConfigFile().string());
         std::cout << "Configuration loaded successfully." << std::endl;
 
-        // Initialize and run engine
         FluidNet::Engine engine;
         engine.initialize();
 

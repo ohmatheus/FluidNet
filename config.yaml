@@ -5,11 +5,11 @@ models:
 simulation:
   fps: 15.0
   grid_resolution: 128
+  input_channels: 4      #[density, velx, vely, density-1]
 
 engine:
-  window_width: 800
-  window_height: 800
-  vsync: false
+  window_width: 1050
+  window_height: 820
   onnx_providers:
     - "CPUExecutionProvider"
     - "CUDAExecutionProvider"

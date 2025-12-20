@@ -198,6 +198,11 @@ const SimulationBuffer* Simulation::getLatestState() const
     return m_front.load(std::memory_order_acquire);
 }
 
+float Simulation::getAvgComputeTimeMs() const
+{
+    return m_avgComputeTimeMs.load(std::memory_order_acquire);
+}
+
 void Simulation::workerLoop_()
 {
     using Clock = std::chrono::high_resolution_clock;
@@ -214,9 +219,28 @@ void Simulation::workerLoop_()
             // frontBuf:  density(t), vel(t)
             // backBuf:   density(t-1)
             // After this call, backBuf will contain t+1
+            auto inferenceStart = Clock::now();
             runInferenceStep_(frontBuf, backBuf);
+            auto inferenceEnd = Clock::now();
 
             m_front.store(backBuf, std::memory_order_release);
+
+            // track compute time
+            float inferenceMs =
+                std::chrono::duration<float, std::milli>(inferenceEnd - inferenceStart).count();
+            m_sumComputeTimeMs += inferenceMs;
+            m_computeTimeSamples++;
+
+            // every 1 second
+            double currentTime = glfwGetTime();
+            if (currentTime - m_lastAvgUpdate >= 1.0)
+            {
+                m_avgComputeTimeMs.store(m_sumComputeTimeMs / m_computeTimeSamples,
+                                         std::memory_order_release);
+                m_sumComputeTimeMs = 0.0f;
+                m_computeTimeSamples = 0;
+                m_lastAvgUpdate = currentTime;
+            }
         }
 
         // fixed FPS
@@ -234,17 +258,19 @@ void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer*
 {
     // frontBuf->density: density_t
     // backBuf->density:  density_{t-1}
+    int inputChannels = FluidNet::Config::getInstance().getInputChannels();
+
     try
     {
         const int gridRes = frontBuf->gridResolution;
         const size_t planeSize = static_cast<size_t>(gridRes) * static_cast<size_t>(gridRes);
 
-        // Debug: continuously inject density in a circle
+        // dummy debug: continuously inject density in a circle
         injectDebugDensityCircle(*frontBuf, *backBuf);
 
         // Model input: (1, 4, H, W) = [density_t, velx_t, vely_t, density_{t-1}]
-        const int64_t inputShape[] = {1, 4, gridRes, gridRes};
-        const size_t inputSize = static_cast<size_t>(4) * planeSize;
+        const int64_t inputShape[] = {1, inputChannels, gridRes, gridRes};
+        const size_t inputSize = static_cast<size_t>(inputChannels) * planeSize;
 
         std::vector<float> inputData(inputSize);
 
@@ -264,8 +290,8 @@ void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer*
 
         // Create input tensor
         auto memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-        Ort::Value inputTensor =
-            Ort::Value::CreateTensor<float>(memoryInfo, inputData.data(), inputSize, inputShape, 4);
+        Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
+            memoryInfo, inputData.data(), inputSize, inputShape, inputChannels);
 
         // Get input/output names
         Ort::AllocatorWithDefaultOptions allocator;
@@ -285,8 +311,8 @@ void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer*
             std::vector<int64_t> outputShape =
                 outputTensors[0].GetTensorTypeAndShapeInfo().GetShape();
 
-            // Basic sanity check (optional)
-            if (outputShape.size() != 4 || outputShape[0] != 1 || outputShape[1] != 3 ||
+            // Basic sanity check
+            if (outputShape.size() != inputChannels || outputShape[0] != 1 || outputShape[1] != 3 ||
                 outputShape[2] != gridRes || outputShape[3] != gridRes)
             {
                 std::cerr << "Unexpected ONNX output shape: [";
