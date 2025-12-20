@@ -1,4 +1,5 @@
 #include "Renderer.hpp"
+#include "Config.hpp"
 #include "EngineConfig.hpp"
 #include "GLLoader.hpp"
 #include <GL/gl.h>
@@ -244,6 +245,8 @@ void Renderer::compileShaders_()
 
 void Renderer::createQuad_()
 {
+    int inputChannels = FluidNet::Config::getInstance().getInputChannels();
+
     // quad, position & flipped texture coordinates (v -> 1 - v)
     float vertices[] = {
         -1.0f, 1.0f,  0.0f, 0.0f, // top-left  -> (0,0)
@@ -263,11 +266,12 @@ void Renderer::createQuad_()
     FluidNet::GL::glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
     // Position attribute
-    FluidNet::GL::glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+    FluidNet::GL::glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, inputChannels * sizeof(float),
+                                        (void*)0);
     FluidNet::GL::glEnableVertexAttribArray(0);
 
     // Texture coordinate attribute
-    FluidNet::GL::glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
+    FluidNet::GL::glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, inputChannels * sizeof(float),
                                         (void*)(2 * sizeof(float)));
     FluidNet::GL::glEnableVertexAttribArray(1);
 

@@ -52,6 +52,11 @@ void Config::loadFromYaml(const std::string& path)
             {
                 m_gridResolution = simulation["grid_resolution"].as<int>();
             }
+
+            if (simulation["input_channels"])
+            {
+                m_inputChanels = simulation["input_channels"].as<int>();
+            }
         }
 
         if (config["models"])

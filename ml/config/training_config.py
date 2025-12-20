@@ -2,7 +2,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from config.config import PROJECT_ROOT_PATH
+from config.config import project_config, PROJECT_ROOT_PATH
 
 
 class TrainingConfig(BaseModel):
@@ -21,7 +21,7 @@ class TrainingConfig(BaseModel):
     split_seed: int = 42
 
     # Model architecture
-    in_channels: int = 4
+    in_channels: int = project_config.simulation.input_channels
     out_channels: int = 3
     base_channels: int = 32
     depth: int = 2
