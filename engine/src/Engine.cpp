@@ -1,6 +1,7 @@
 #include "Engine.hpp"
 #include "Config.hpp"
 #include "FluidScene.hpp"
+#include "GLLoader.hpp"
 #include "ModelRegistry.hpp"
 #include "Scene.hpp"
 #include <GL/gl.h>
@@ -10,37 +11,6 @@
 #include <chrono>
 #include <imgui.h>
 #include <iostream>
-
-namespace
-{
-PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer = nullptr;
-
-void loadGLFunctions()
-{
-    glBindFramebuffer = (PFNGLBINDFRAMEBUFFERPROC)glfwGetProcAddress("glBindFramebuffer");
-}
-}
-
-void FluidNet::Engine::errorCallback(int error, const char* description)
-{
-    std::cerr << "GLFW Error " << error << ": " << description << std::endl;
-}
-
-void FluidNet::Engine::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
-{
-    Engine* engine = static_cast<Engine*>(glfwGetWindowUserPointer(window));
-
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-    {
-        glfwSetWindowShouldClose(window, GLFW_TRUE);
-        return;
-    }
-
-    if (engine->m_currentScene)
-    {
-        engine->m_currentScene->onKeyPress(key, scancode, action, mods);
-    }
-}
 
 namespace FluidNet
 {
@@ -83,7 +53,7 @@ void Engine::initialize()
     glfwMakeContextCurrent(m_window);
 
     // Load GL functions
-    loadGLFunctions();
+    FluidNet::GL::loadGLFunctions();
 
     // no need for vsync
     glfwSwapInterval(0);
@@ -129,25 +99,8 @@ void Engine::run()
     }
 }
 
-void Engine::renderFrame_()
+void Engine::setupDockspace_()
 {
-    double currentTime = glfwGetTime();
-    float deltaTime = static_cast<float>(currentTime - m_lastFrameTime);
-    m_lastFrameTime = currentTime;
-
-    glfwPollEvents();
-
-    if (m_currentScene)
-    {
-        m_currentScene->onUpdate(deltaTime);
-    }
-
-    // Start ImGui frame
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
-
-    // Create fullscreen dockspace
     ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->Pos);
     ImGui::SetNextWindowSize(viewport->Size);
@@ -167,8 +120,10 @@ void Engine::renderFrame_()
     ImGuiID dockspace_id = ImGui::GetID("MainDockspace");
     ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f));
     ImGui::End();
+}
 
-    // Engine debug window (dockable)
+void Engine::renderEngineDebugWindow_(float deltaTime)
+{
     ImGui::Begin("Engine");
     ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
     ImGui::Text("Frame Time: %.2f ms", deltaTime * 1000.0f);
@@ -205,19 +160,14 @@ void Engine::renderFrame_()
         }
     }
     ImGui::End();
+}
 
-    // Scene UI (dockable)
-    if (m_currentScene)
-    {
-        m_currentScene->onRenderUI();
-    }
-
-    // Simulation Viewport Window (dockable, fixed 800x800)
+void Engine::renderViewportWindow_()
+{
     ImGui::SetNextWindowSize(ImVec2(800.0f, 800.0f), ImGuiCond_Always);
     ImGui::Begin("Viewport");
     ImVec2 viewportSize = ImVec2(800.0f, 800.0f);
 
-    // Render simulation to framebuffer
     if (m_currentScene)
     {
         if (auto* fluidScene = dynamic_cast<FluidScene*>(m_currentScene.get()))
@@ -249,12 +199,44 @@ void Engine::renderFrame_()
         }
     }
     ImGui::End();
+}
+
+void Engine::renderFrame_()
+{
+    double currentTime = glfwGetTime();
+    float deltaTime = static_cast<float>(currentTime - m_lastFrameTime);
+    m_lastFrameTime = currentTime;
+
+    glfwPollEvents();
+
+    if (m_currentScene)
+    {
+        m_currentScene->onUpdate(deltaTime);
+    }
+
+    // Start ImGui frame
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
+    // Setup dockspace
+    setupDockspace_();
+
+    // Render UI windows
+    renderEngineDebugWindow_(deltaTime);
+
+    if (m_currentScene)
+    {
+        m_currentScene->onRenderUI();
+    }
+
+    renderViewportWindow_();
 
     // Render ImGui
     ImGui::Render();
 
     // Clear screen and render ImGui to screen
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    FluidNet::GL::glBindFramebuffer(GL_FRAMEBUFFER, 0);
     int display_w, display_h;
     glfwGetFramebufferSize(m_window, &display_w, &display_h);
     glViewport(0, 0, display_w, display_h);
@@ -299,4 +281,25 @@ void Engine::shutdown()
     glfwTerminate();
 }
 
+}
+
+void FluidNet::Engine::errorCallback(int error, const char* description)
+{
+    std::cerr << "GLFW Error " << error << ": " << description << std::endl;
+}
+
+void FluidNet::Engine::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+    Engine* engine = static_cast<Engine*>(glfwGetWindowUserPointer(window));
+
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+    {
+        glfwSetWindowShouldClose(window, GLFW_TRUE);
+        return;
+    }
+
+    if (engine->m_currentScene)
+    {
+        engine->m_currentScene->onKeyPress(key, scancode, action, mods);
+    }
 }

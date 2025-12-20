@@ -1,5 +1,6 @@
 #include "Renderer.hpp"
 #include "EngineConfig.hpp"
+#include "GLLoader.hpp"
 #include <GL/gl.h>
 #include <GL/glext.h>
 #include <filesystem>
@@ -7,75 +8,6 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
-
-namespace
-{
-PFNGLCREATESHADERPROC glCreateShader = nullptr;
-PFNGLSHADERSOURCEPROC glShaderSource = nullptr;
-PFNGLCOMPILESHADERPROC glCompileShader = nullptr;
-PFNGLGETSHADERIVPROC glGetShaderiv = nullptr;
-PFNGLGETSHADERINFOLOGPROC glGetShaderInfoLog = nullptr;
-PFNGLDELETESHADERPROC glDeleteShader = nullptr;
-PFNGLCREATEPROGRAMPROC glCreateProgram = nullptr;
-PFNGLATTACHSHADERPROC glAttachShader = nullptr;
-PFNGLLINKPROGRAMPROC glLinkProgram = nullptr;
-PFNGLGETPROGRAMIVPROC glGetProgramiv = nullptr;
-PFNGLGETPROGRAMINFOLOGPROC glGetProgramInfoLog = nullptr;
-PFNGLDELETEPROGRAMPROC glDeleteProgram = nullptr;
-PFNGLUSEPROGRAMPROC glUseProgram = nullptr;
-PFNGLGENVERTEXARRAYSPROC glGenVertexArrays = nullptr;
-PFNGLBINDVERTEXARRAYPROC glBindVertexArray = nullptr;
-PFNGLDELETEVERTEXARRAYSPROC glDeleteVertexArrays = nullptr;
-PFNGLGENBUFFERSPROC glGenBuffers = nullptr;
-PFNGLBINDBUFFERPROC glBindBuffer = nullptr;
-PFNGLBUFFERDATAPROC glBufferData = nullptr;
-PFNGLDELETEBUFFERSPROC glDeleteBuffers = nullptr;
-PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer = nullptr;
-PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray = nullptr;
-PFNGLGETUNIFORMLOCATIONPROC glGetUniformLocation = nullptr;
-PFNGLUNIFORM1IPROC glUniform1i = nullptr;
-PFNGLGENFRAMEBUFFERSPROC glGenFramebuffers = nullptr;
-PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer = nullptr;
-PFNGLFRAMEBUFFERTEXTURE2DPROC glFramebufferTexture2D = nullptr;
-PFNGLCHECKFRAMEBUFFERSTATUSPROC glCheckFramebufferStatus = nullptr;
-PFNGLDELETEFRAMEBUFFERSPROC glDeleteFramebuffers = nullptr;
-
-void loadGLFunctions()
-{
-    glCreateShader = (PFNGLCREATESHADERPROC)glfwGetProcAddress("glCreateShader");
-    glShaderSource = (PFNGLSHADERSOURCEPROC)glfwGetProcAddress("glShaderSource");
-    glCompileShader = (PFNGLCOMPILESHADERPROC)glfwGetProcAddress("glCompileShader");
-    glGetShaderiv = (PFNGLGETSHADERIVPROC)glfwGetProcAddress("glGetShaderiv");
-    glGetShaderInfoLog = (PFNGLGETSHADERINFOLOGPROC)glfwGetProcAddress("glGetShaderInfoLog");
-    glDeleteShader = (PFNGLDELETESHADERPROC)glfwGetProcAddress("glDeleteShader");
-    glCreateProgram = (PFNGLCREATEPROGRAMPROC)glfwGetProcAddress("glCreateProgram");
-    glAttachShader = (PFNGLATTACHSHADERPROC)glfwGetProcAddress("glAttachShader");
-    glLinkProgram = (PFNGLLINKPROGRAMPROC)glfwGetProcAddress("glLinkProgram");
-    glGetProgramiv = (PFNGLGETPROGRAMIVPROC)glfwGetProcAddress("glGetProgramiv");
-    glGetProgramInfoLog = (PFNGLGETPROGRAMINFOLOGPROC)glfwGetProcAddress("glGetProgramInfoLog");
-    glDeleteProgram = (PFNGLDELETEPROGRAMPROC)glfwGetProcAddress("glDeleteProgram");
-    glUseProgram = (PFNGLUSEPROGRAMPROC)glfwGetProcAddress("glUseProgram");
-    glGenVertexArrays = (PFNGLGENVERTEXARRAYSPROC)glfwGetProcAddress("glGenVertexArrays");
-    glBindVertexArray = (PFNGLBINDVERTEXARRAYPROC)glfwGetProcAddress("glBindVertexArray");
-    glDeleteVertexArrays = (PFNGLDELETEVERTEXARRAYSPROC)glfwGetProcAddress("glDeleteVertexArrays");
-    glGenBuffers = (PFNGLGENBUFFERSPROC)glfwGetProcAddress("glGenBuffers");
-    glBindBuffer = (PFNGLBINDBUFFERPROC)glfwGetProcAddress("glBindBuffer");
-    glBufferData = (PFNGLBUFFERDATAPROC)glfwGetProcAddress("glBufferData");
-    glDeleteBuffers = (PFNGLDELETEBUFFERSPROC)glfwGetProcAddress("glDeleteBuffers");
-    glVertexAttribPointer =
-        (PFNGLVERTEXATTRIBPOINTERPROC)glfwGetProcAddress("glVertexAttribPointer");
-    glEnableVertexAttribArray =
-        (PFNGLENABLEVERTEXATTRIBARRAYPROC)glfwGetProcAddress("glEnableVertexAttribArray");
-    glGetUniformLocation = (PFNGLGETUNIFORMLOCATIONPROC)glfwGetProcAddress("glGetUniformLocation");
-    glUniform1i = (PFNGLUNIFORM1IPROC)glfwGetProcAddress("glUniform1i");
-    glGenFramebuffers = (PFNGLGENFRAMEBUFFERSPROC)glfwGetProcAddress("glGenFramebuffers");
-    glBindFramebuffer = (PFNGLBINDFRAMEBUFFERPROC)glfwGetProcAddress("glBindFramebuffer");
-    glFramebufferTexture2D =
-        (PFNGLFRAMEBUFFERTEXTURE2DPROC)glfwGetProcAddress("glFramebufferTexture2D");
-    glCheckFramebufferStatus =
-        (PFNGLCHECKFRAMEBUFFERSTATUSPROC)glfwGetProcAddress("glCheckFramebufferStatus");
-    glDeleteFramebuffers = (PFNGLDELETEFRAMEBUFFERSPROC)glfwGetProcAddress("glDeleteFramebuffers");
-}
 
 namespace
 {
@@ -116,7 +48,6 @@ void normalizeDensityForDisplay(std::vector<float>& density)
         v = n;
     }
 }
-}
 
 std::string readShaderFile(const std::string& filepath)
 {
@@ -149,46 +80,17 @@ void Renderer::initialize()
         return;
     }
 
-    loadGLFunctions();
+    FluidNet::GL::loadGLFunctions();
 
     try
     {
         compileShaders_();
         createQuad_();
 
-        glGenTextures(1, &m_velocityTexture);
-        glBindTexture(GL_TEXTURE_2D, m_velocityTexture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        m_velocityTexture = createTexture2D_(GL_RG32F);
+        m_densityTexture = createTexture2D_(GL_R32F);
 
-        glGenTextures(1, &m_densityTexture);
-        glBindTexture(GL_TEXTURE_2D, m_densityTexture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-        // Create framebuffer for offscreen rendering
-        glGenFramebuffers(1, &m_framebuffer);
-        glBindFramebuffer(GL_FRAMEBUFFER, m_framebuffer);
-
-        glGenTextures(1, &m_framebufferTexture);
-        glBindTexture(GL_TEXTURE_2D, m_framebufferTexture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, m_fbWidth, m_fbHeight, 0, GL_RGB, GL_UNSIGNED_BYTE,
-                     nullptr);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                               m_framebufferTexture, 0);
-
-        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        {
-            throw std::runtime_error("Framebuffer not complete!");
-        }
-
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        setupFramebuffer_();
 
         m_initialized = true;
     }
@@ -204,19 +106,19 @@ void Renderer::shutdown()
 {
     if (m_shaderProgram)
     {
-        glDeleteProgram(m_shaderProgram);
+        FluidNet::GL::glDeleteProgram(m_shaderProgram);
         m_shaderProgram = 0;
     }
 
     if (m_vao)
     {
-        glDeleteVertexArrays(1, &m_vao);
+        FluidNet::GL::glDeleteVertexArrays(1, &m_vao);
         m_vao = 0;
     }
 
     if (m_vbo)
     {
-        glDeleteBuffers(1, &m_vbo);
+        FluidNet::GL::glDeleteBuffers(1, &m_vbo);
         m_vbo = 0;
     }
 
@@ -234,7 +136,7 @@ void Renderer::shutdown()
 
     if (m_framebuffer)
     {
-        glDeleteFramebuffers(1, &m_framebuffer);
+        FluidNet::GL::glDeleteFramebuffers(1, &m_framebuffer);
         m_framebuffer = 0;
     }
 
@@ -247,6 +149,80 @@ void Renderer::shutdown()
     m_initialized = false;
 }
 
+GLuint Renderer::createTexture2D_(GLenum internalFormat, GLint minFilter, GLint magFilter,
+                                  GLint wrapS, GLint wrapT)
+{
+    GLuint texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minFilter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, magFilter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrapS);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapT);
+    return texture;
+}
+
+void Renderer::setupFramebuffer_()
+{
+    FluidNet::GL::glGenFramebuffers(1, &m_framebuffer);
+    FluidNet::GL::glBindFramebuffer(GL_FRAMEBUFFER, m_framebuffer);
+
+    m_framebufferTexture = createTexture2D_(GL_RGB);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, m_fbWidth, m_fbHeight, 0, GL_RGB, GL_UNSIGNED_BYTE,
+                 nullptr);
+    FluidNet::GL::glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                                         m_framebufferTexture, 0);
+
+    if (FluidNet::GL::glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        throw std::runtime_error("Framebuffer not complete!");
+    }
+
+    FluidNet::GL::glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+GLuint Renderer::compileShader_(GLenum shaderType, const char* source,
+                                const std::string& shaderName)
+{
+    GLuint shader = FluidNet::GL::glCreateShader(shaderType);
+    FluidNet::GL::glShaderSource(shader, 1, &source, nullptr);
+    FluidNet::GL::glCompileShader(shader);
+
+    GLint success;
+    FluidNet::GL::glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    if (!success)
+    {
+        char infoLog[512];
+        FluidNet::GL::glGetShaderInfoLog(shader, 512, nullptr, infoLog);
+        FluidNet::GL::glDeleteShader(shader);
+        throw std::runtime_error(shaderName +
+                                 " shader compilation failed: " + std::string(infoLog));
+    }
+
+    return shader;
+}
+
+GLuint Renderer::linkShaderProgram_(GLuint vertexShader, GLuint fragmentShader)
+{
+    GLuint program = FluidNet::GL::glCreateProgram();
+    FluidNet::GL::glAttachShader(program, vertexShader);
+    FluidNet::GL::glAttachShader(program, fragmentShader);
+    FluidNet::GL::glLinkProgram(program);
+
+    GLint success;
+    FluidNet::GL::glGetProgramiv(program, GL_LINK_STATUS, &success);
+    if (!success)
+    {
+        char infoLog[512];
+        FluidNet::GL::glGetProgramInfoLog(program, 512, nullptr, infoLog);
+        FluidNet::GL::glDeleteShader(vertexShader);
+        FluidNet::GL::glDeleteShader(fragmentShader);
+        throw std::runtime_error("Shader program linking failed: " + std::string(infoLog));
+    }
+
+    return program;
+}
+
 void Renderer::compileShaders_()
 {
     std::filesystem::path shaderDir = Paths::getShaderDir();
@@ -256,57 +232,14 @@ void Renderer::compileShaders_()
     std::string vertexShaderStr = readShaderFile(vertPath.string());
     std::string fragmentShaderStr = readShaderFile(fragPath.string());
 
-    const char* vertexShaderSource = vertexShaderStr.c_str();
-    const char* fragmentShaderSource = fragmentShaderStr.c_str();
+    GLuint vertexShader = compileShader_(GL_VERTEX_SHADER, vertexShaderStr.c_str(), "Vertex");
+    GLuint fragmentShader =
+        compileShader_(GL_FRAGMENT_SHADER, fragmentShaderStr.c_str(), "Fragment");
 
-    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, nullptr);
-    glCompileShader(vertexShader);
+    m_shaderProgram = linkShaderProgram_(vertexShader, fragmentShader);
 
-    // Compile vertex shader
-    GLint success;
-    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-    if (!success)
-    {
-        char infoLog[512];
-        glGetShaderInfoLog(vertexShader, 512, nullptr, infoLog);
-        glDeleteShader(vertexShader);
-        throw std::runtime_error("Vertex shader compilation failed: " + std::string(infoLog));
-    }
-
-    // Compile fragment shader
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, nullptr);
-    glCompileShader(fragmentShader);
-
-    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
-    if (!success)
-    {
-        char infoLog[512];
-        glGetShaderInfoLog(fragmentShader, 512, nullptr, infoLog);
-        glDeleteShader(vertexShader);
-        glDeleteShader(fragmentShader);
-        throw std::runtime_error("Fragment shader compilation failed: " + std::string(infoLog));
-    }
-
-    // Link shaders
-    m_shaderProgram = glCreateProgram();
-    glAttachShader(m_shaderProgram, vertexShader);
-    glAttachShader(m_shaderProgram, fragmentShader);
-    glLinkProgram(m_shaderProgram);
-
-    glGetProgramiv(m_shaderProgram, GL_LINK_STATUS, &success);
-    if (!success)
-    {
-        char infoLog[512];
-        glGetProgramInfoLog(m_shaderProgram, 512, nullptr, infoLog);
-        glDeleteShader(vertexShader);
-        glDeleteShader(fragmentShader);
-        throw std::runtime_error("Shader program linking failed: " + std::string(infoLog));
-    }
-
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
+    FluidNet::GL::glDeleteShader(vertexShader);
+    FluidNet::GL::glDeleteShader(fragmentShader);
 }
 
 void Renderer::createQuad_()
@@ -321,23 +254,24 @@ void Renderer::createQuad_()
         1.0f,  1.0f,  1.0f, 0.0f  // top-right -> (1,0)
     };
 
-    glGenVertexArrays(1, &m_vao);
-    glGenBuffers(1, &m_vbo);
+    FluidNet::GL::glGenVertexArrays(1, &m_vao);
+    FluidNet::GL::glGenBuffers(1, &m_vbo);
 
-    glBindVertexArray(m_vao);
+    FluidNet::GL::glBindVertexArray(m_vao);
 
-    glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    FluidNet::GL::glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+    FluidNet::GL::glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
     // Position attribute
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
+    FluidNet::GL::glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+    FluidNet::GL::glEnableVertexAttribArray(0);
 
     // Texture coordinate attribute
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-    glEnableVertexAttribArray(1);
+    FluidNet::GL::glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
+                                        (void*)(2 * sizeof(float)));
+    FluidNet::GL::glEnableVertexAttribArray(1);
 
-    glBindVertexArray(0);
+    FluidNet::GL::glBindVertexArray(0);
 }
 
 void Renderer::uploadToGPU_(const SimulationBuffer& state)
@@ -377,23 +311,24 @@ void Renderer::render(const SimulationBuffer& state)
     }
 
     // Bind framebuffer for offscreen rendering
-    glBindFramebuffer(GL_FRAMEBUFFER, m_framebuffer);
+    FluidNet::GL::glBindFramebuffer(GL_FRAMEBUFFER, m_framebuffer);
     glViewport(0, 0, m_fbWidth, m_fbHeight);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    glUseProgram(m_shaderProgram);
+    FluidNet::GL::glUseProgram(m_shaderProgram);
 
     // Bind density texture
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_densityTexture);
-    glUniform1i(glGetUniformLocation(m_shaderProgram, "densityTexture"), 0);
+    FluidNet::GL::glUniform1i(FluidNet::GL::glGetUniformLocation(m_shaderProgram, "densityTexture"),
+                              0);
 
-    glBindVertexArray(m_vao);
+    FluidNet::GL::glBindVertexArray(m_vao);
     glDrawArrays(GL_TRIANGLES, 0, 6);
-    glBindVertexArray(0);
+    FluidNet::GL::glBindVertexArray(0);
 
     // Unbind framebuffer back to screen
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    FluidNet::GL::glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void Renderer::resizeFramebuffer(int width, int height)
