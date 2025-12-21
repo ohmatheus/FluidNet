@@ -31,9 +31,7 @@ def pad_to_domain_size(
     Pad array to full domain size with zeros.
     """
     if pad_x_before > 0 or pad_x_after > 0 or pad_z_before > 0 or pad_z_after > 0:
-        print(
-            f"    Padding to domain size: X[{pad_x_before}, {pad_x_after}], Z[{pad_z_before}, {pad_z_after}]"
-        )
+        print(f"    Padding to domain size: X[{pad_x_before}, {pad_x_after}], Z[{pad_z_before}, {pad_z_after}]")
         padded = np.pad(
             data,
             ((pad_z_before, pad_z_after), (pad_x_before, pad_x_after)),
@@ -49,9 +47,13 @@ def check_resolution_consistency(
     data: np.ndarray,
     target_resolution: int,
 ) -> None:
-    assert data.shape[0] == target_resolution and data.shape[1] == target_resolution, (
-        f"PADDING BUG: Expected shape ({target_resolution}, {target_resolution}), "
-        f"got {data.shape}. Check padding calculation logic!"
+    assert data.shape[0] == target_resolution, (
+        f"PADDING BUG: Height mismatch! Expected {target_resolution}, got {data.shape[0]}. "
+        f"Check padding calculation logic!"
+    )
+    assert data.shape[1] == target_resolution, (
+        f"PADDING BUG: Width mismatch! Expected {target_resolution}, got {data.shape[1]}. "
+        f"Check padding calculation logic!"
     )
 
 

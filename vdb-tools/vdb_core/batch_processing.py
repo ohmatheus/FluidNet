@@ -260,9 +260,9 @@ def process_all_cache_sequences(
 
     for cache_data_dir in cache_data_dirs:
         cache_name = cache_data_dir.parent.name
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Processing cache: {cache_name}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         # Process this cache's VDB files
         sequences_from_cache = process_single_cache_sequence(
@@ -279,6 +279,6 @@ def process_all_cache_sequences(
 
         print(f"Generated {sequences_from_cache} sequences from {cache_name}")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"COMPLETE: Generated {total_sequences} total sequences in {output_dir}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")

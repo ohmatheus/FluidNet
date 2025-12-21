@@ -3,7 +3,7 @@ from typing import Any
 
 import numpy as np
 
-from vdb_core.transforms import calculate_padding, pad_to_domain_size, check_resolution_consistency
+from vdb_core.transforms import calculate_padding, check_resolution_consistency, pad_to_domain_size
 from vdb_core.vdb_io import get_grid_value
 
 

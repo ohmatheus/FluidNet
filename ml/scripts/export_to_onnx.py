@@ -3,7 +3,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 
-from config.config import project_config, PROJECT_ROOT_PATH
+from config.config import PROJECT_ROOT_PATH, project_config
 from models.small_unet import SmallUNet
 
 CHECKPOINT_FILENAME = "final_model.pth"
