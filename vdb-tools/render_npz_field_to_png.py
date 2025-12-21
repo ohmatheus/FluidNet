@@ -87,7 +87,7 @@ def render_npz_field(
             img.save(fpath)
         else:
             # Per-frame fallback conversion
-            _save_png(field_data[t], fpath)
+            _save_png(field_data[t], str(fpath))
 
     return T
 

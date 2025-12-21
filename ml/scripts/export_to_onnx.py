@@ -3,14 +3,14 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 
-from config.config import PROJECT_ROOT_PATH
+from config.config import project_config, PROJECT_ROOT_PATH
 from models.small_unet import SmallUNet
 
 CHECKPOINT_FILENAME = "final_model.pth"
-RESOLUTION = 128
-INPUT_CHANNELS = 4
+RESOLUTION = project_config.simulation.grid_resolution
+INPUT_CHANNELS = project_config.simulation.input_channels
 BATCH_SIZE = 1
-ONNX_OPSET_VERSION = 17  # Modern opset with good compatibility
+ONNX_OPSET_VERSION = 18  # Modern opset with good compatibility
 DEVICE = "cuda"
 
 

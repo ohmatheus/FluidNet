@@ -15,7 +15,7 @@ class TrainingConfig(BaseModel):
     num_workers: int = 4
 
     # Dataset settings
-    npz_dir: Path = Path(PROJECT_ROOT_PATH / "vdb-tools/numpy_output/")
+    npz_dir: Path = Path(PROJECT_ROOT_PATH / "data/npz/") # todo unify config
     normalize: bool = True
     split_ratios: tuple[float, float, float] = (0.7, 0.15, 0.15)  # train, val, test - to change
     split_seed: int = 42
@@ -31,6 +31,6 @@ class TrainingConfig(BaseModel):
     mlflow_experiment_name: str = "fluid_baseline_v1"
 
     # Checkpoint settings
-    checkpoint_dir: Path = Path(PROJECT_ROOT_PATH / "data/checkpoints")
+    checkpoint_dir: Path = Path(PROJECT_ROOT_PATH / "data/checkpoints") # todo unify config
     save_every_n_epochs: int = 10
     keep_last_n_checkpoints: int = 3

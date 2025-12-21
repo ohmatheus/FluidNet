@@ -16,7 +16,7 @@ class MLSettings(BaseSettings):
 
 
 class SimulationConfig(BaseModel):
-    grid_resolution: list[int]
+    grid_resolution: int
     input_channels: int
 
 
