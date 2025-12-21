@@ -17,6 +17,9 @@ class VDBSettings(BaseSettings):
 class ProjectVDBConfig(BaseModel):
     blender_cache_directory: Path
     npz_output_directory: Path
+    stats_percentiles: list[int] = [75, 90, 95, 99, 100]
+    normalization_percentile: int
+    stats_output_file: str = "data/_field_stats.yaml"
 
 
 class SimulationConfig(BaseModel):

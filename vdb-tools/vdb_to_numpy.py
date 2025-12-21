@@ -42,6 +42,9 @@ def main() -> None:
         target_resolution=resolution,
         max_frames=args.max_frames,
         save_frames=args.save_frames,
+        percentiles=project_config.vdb_tools.stats_percentiles,
+        normalization_percentile=project_config.vdb_tools.normalization_percentile,
+        stats_output_file=project_config.vdb_tools.stats_output_file,
     )
 
 

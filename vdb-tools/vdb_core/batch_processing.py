@@ -5,9 +5,16 @@ import numpy as np
 import openvdb  # type: ignore[import-not-found]
 
 from vdb_core.grid_extraction import extract_density_field_avg, extract_velocity_components_avg
+from vdb_core.statistics import (
+    SequenceStats,
+    aggregate_global_stats,
+    compute_normalization_scales,
+    compute_sequence_stats,
+    save_stats_to_yaml,
+)
 from vdb_core.transforms import apply_spatial_transforms
 from vdb_core.vdb_io import extract_frame_number, get_grid_names
-
+from config import PROJECT_ROOT_PATH
 
 def process_vdb_file(
     vdb_path: Path,
@@ -127,14 +134,15 @@ def process_single_cache_sequence(
     max_frames: int | None = None,
     save_frames: bool = False,
     starting_seq_number: int = 0,
-) -> int:
+    percentiles: list[int] | None = None,
+) -> tuple[int, list[SequenceStats]]:
     cache_data_dir = Path(cache_data_dir)
     output_dir = Path(output_dir)
     vdb_files = sorted(cache_data_dir.glob("*.vdb"))
 
     if not vdb_files:
         print(f"No VDB files found in {cache_data_dir}")
-        return 0
+        return 0, []
 
     print(f"Found {len(vdb_files)} VDB files")
     print(f"Target resolution: {target_resolution}x{target_resolution}")
@@ -152,6 +160,10 @@ def process_single_cache_sequence(
         print(f"Processing first {len(vdb_files)} files")
 
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Initialize stats collection
+    sequence_stats_list: list[SequenceStats] = []
+    percentiles_to_use = percentiles if percentiles is not None else [75, 90, 95, 99, 100]
 
     # Process files
     successful = 0
@@ -209,7 +221,7 @@ def process_single_cache_sequence(
     N = len(density_frames)
     if N < seq_len:
         print(f"Not enough frames to create a single sequence (have {N}, need {seq_len}). No seq_*.npz written.")
-        return 0
+        return 0, []
 
     T = seq_len
     H, W = hw_ref if hw_ref is not None else (target_resolution, target_resolution)
@@ -230,10 +242,24 @@ def process_single_cache_sequence(
         np.savez_compressed(out_path, density=d_stack, velx=x_stack, velz=z_stack)
         print(f"Saved {out_path}  shape: T={T}, H={H}, W={W}")
 
+        # Compute statistics for this sequence
+        try:
+            seq_stats = compute_sequence_stats(
+                sequence_name=out_name.replace(".npz", ""),
+                density=d_stack,
+                velx=x_stack,
+                velz=z_stack,
+                percentiles=percentiles_to_use,
+            )
+            sequence_stats_list.append(seq_stats)
+            print(f"  Computed statistics for {out_name}")
+        except Exception as e:
+            print(f"  Warning: Failed to compute statistics for {out_name}: {e}")
+
     print("\n=== Complete ===")
     print(f"Generated {n_seqs} sequence files in {output_dir}")
 
-    return n_seqs
+    return n_seqs, sequence_stats_list
 
 
 def process_all_cache_sequences(
@@ -242,6 +268,9 @@ def process_all_cache_sequences(
     target_resolution: int,
     max_frames: int | None = None,
     save_frames: bool = False,
+    percentiles: list[int] | None = None,
+    normalization_percentile: int = 95,
+    stats_output_file: str = "data/_field_stats.yaml",
 ) -> None:
     cache_data_dirs = discover_cache_sequences(blender_caches_root)
 
@@ -255,8 +284,11 @@ def process_all_cache_sequences(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    percentiles_to_use = percentiles if percentiles is not None else [75, 90, 95, 99, 100]
+
     global_seq_counter = 0
     total_sequences = 0
+    all_sequence_stats: list[SequenceStats] = []
 
     for cache_data_dir in cache_data_dirs:
         cache_name = cache_data_dir.parent.name
@@ -265,19 +297,54 @@ def process_all_cache_sequences(
         print(f"{'=' * 60}")
 
         # Process this cache's VDB files
-        sequences_from_cache = process_single_cache_sequence(
+        sequences_from_cache, cache_stats = process_single_cache_sequence(
             cache_data_dir=cache_data_dir,
             output_dir=output_dir,
             target_resolution=target_resolution,
             max_frames=max_frames,
             save_frames=save_frames,
             starting_seq_number=global_seq_counter,
+            percentiles=percentiles_to_use,
         )
 
         global_seq_counter += sequences_from_cache
         total_sequences += sequences_from_cache
+        all_sequence_stats.extend(cache_stats)
 
         print(f"Generated {sequences_from_cache} sequences from {cache_name}")
+
+    # Compute and save global statistics
+    if all_sequence_stats:
+        try:
+
+            global_stats = aggregate_global_stats(all_sequence_stats, percentiles=percentiles_to_use)
+            normalization_scales = compute_normalization_scales(global_stats, normalization_percentile)
+            stats_output_path = PROJECT_ROOT_PATH / stats_output_file
+
+            save_stats_to_yaml(
+                output_path=stats_output_path,
+                sequence_stats=all_sequence_stats,
+                global_stats=global_stats,
+                normalization_scales=normalization_scales,
+            )
+
+            print(f"\n{'=' * 60}")
+            print("STATISTICS SUMMARY:")
+            print(f"  Total sequences analyzed: {global_stats.num_sequences}")
+            print(f"  Density range: [{global_stats.density.min:.6f}, {global_stats.density.max:.6f}]")
+            print(f"  Velx range: [{global_stats.velx.min:.6f}, {global_stats.velx.max:.6f}]")
+            print(f"  Velz range: [{global_stats.velz.min:.6f}, {global_stats.velz.max:.6f}]")
+            print(f"\n  Normalization scales (P{normalization_percentile}):")
+            print(f"    S_density = {normalization_scales.S_density:.6f}")
+            print(f"    S_velx = {normalization_scales.S_velx:.6f}")
+            print(f"    S_velz = {normalization_scales.S_velz:.6f}")
+            print(f"  Stats saved to: {stats_output_path}")
+            print(f"{'=' * 60}")
+        except Exception as e:
+            print(f"\nError: Failed to save statistics: {e}")
+            print("This is non-critical; NPZ files were created successfully.")
+    else:
+        print("\nWarning: No sequences were created, no statistics computed.")
 
     print(f"\n{'=' * 60}")
     print(f"COMPLETE: Generated {total_sequences} total sequences in {output_dir}")

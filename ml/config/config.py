@@ -13,12 +13,20 @@ class MLSettings(BaseSettings):
 
 
 # -------------------
+class ProjectVDBConfig(BaseModel):
+    blender_cache_directory: Path
+    npz_output_directory: Path
+    stats_percentiles: list[int]
+    normalization_percentile: int
+    stats_output_file: str = "data/_field_stats.yaml"
+
 class SimulationConfig(BaseModel):
     grid_resolution: int
     input_channels: int
 
 
 class ProjectConfig(BaseModel):
+    vdb_tools: ProjectVDBConfig
     simulation: SimulationConfig
 
 
