@@ -35,7 +35,7 @@ onnx-export = "scripts.export_to_onnx:main"
 package = true
 
 [tool.setuptools.packages.find]
-include = ["config", "models", "dataset", "training", "inference", "utils", "scripts"]
+include = ["config", "models", "dataset", "training", "inference", "utils", "scripts",  "../shared"]
 exclude = [".venv*", ".tox*", "mlruns*", "__pycache__*", "*.egg-info"]
 
 [tool.ruff]
@@ -72,7 +72,7 @@ module = "numpy.*"
 ignore_missing_imports = true
 
 [tool.pyright]
-include = ["config", "models", "dataset", "training", "inference", "utils", "scripts"]
+include = ["config", "models", "dataset", "training", "inference", "utils", "scripts", "../shared"]
 extraPaths = ["."]
 pythonVersion = "3.13"
 pythonPlatform = "Linux"
