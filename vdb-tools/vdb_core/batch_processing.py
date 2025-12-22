@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import openvdb  # type: ignore[import-not-found]
 
+from config import PROJECT_ROOT_PATH
 from vdb_core.grid_extraction import extract_density_field_avg, extract_velocity_components_avg
 from vdb_core.statistics import (
     SequenceStats,
@@ -14,7 +15,7 @@ from vdb_core.statistics import (
 )
 from vdb_core.transforms import apply_spatial_transforms
 from vdb_core.vdb_io import extract_frame_number, get_grid_names
-from config import PROJECT_ROOT_PATH
+
 
 def process_vdb_file(
     vdb_path: Path,
@@ -316,7 +317,6 @@ def process_all_cache_sequences(
     # Compute and save global statistics
     if all_sequence_stats:
         try:
-
             global_stats = aggregate_global_stats(all_sequence_stats, percentiles=percentiles_to_use)
             normalization_scales = compute_normalization_scales(global_stats, normalization_percentile)
             stats_output_path = PROJECT_ROOT_PATH / stats_output_file

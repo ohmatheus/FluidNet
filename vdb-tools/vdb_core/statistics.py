@@ -73,9 +73,7 @@ class NormalizationScales:
         }
 
 
-def compute_field_stats(
-    array: np.ndarray, percentiles: list[int], use_absolute: bool = False
-) -> FieldStats:
+def compute_field_stats(array: np.ndarray, percentiles: list[int], use_absolute: bool = False) -> FieldStats:
     # Flatten to 1D for statistics
     flat = array.ravel()
 
@@ -109,9 +107,7 @@ def compute_sequence_stats(
     )
 
 
-def aggregate_global_stats(
-    sequence_stats_list: list[SequenceStats], percentiles: list[int]
-) -> GlobalStats:
+def aggregate_global_stats(sequence_stats_list: list[SequenceStats], percentiles: list[int]) -> GlobalStats:
     if not sequence_stats_list:
         raise ValueError("Cannot compute global stats from empty sequence list")
 
@@ -148,9 +144,7 @@ def aggregate_global_stats(
     )
 
 
-def compute_normalization_scales(
-    global_stats: GlobalStats, normalization_percentile: int
-) -> NormalizationScales:
+def compute_normalization_scales(global_stats: GlobalStats, normalization_percentile: int) -> NormalizationScales:
     if normalization_percentile not in global_stats.density.percentiles:
         raise ValueError(
             f"Percentile {normalization_percentile} not found in global statistics. "

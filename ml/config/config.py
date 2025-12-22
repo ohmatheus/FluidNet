@@ -20,6 +20,7 @@ class ProjectVDBConfig(BaseModel):
     normalization_percentile: int
     stats_output_file: str = "data/_field_stats.yaml"
 
+
 class SimulationConfig(BaseModel):
     grid_resolution: int
     input_channels: int
