@@ -99,8 +99,8 @@ def find_models_to_export(checkpoint_dir: Path, checkpoint_filename: str) -> lis
 
 
 def main() -> None:
-    checkpoint_dir = PROJECT_ROOT_PATH / "data/checkpoints"
-    output_dir = PROJECT_ROOT_PATH / "data/onnx"
+    checkpoint_dir = PROJECT_ROOT_PATH / project_config.models.pytorch_folder
+    output_dir = PROJECT_ROOT_PATH / project_config.models.onnx_folder
 
     models_to_export = find_models_to_export(checkpoint_dir, CHECKPOINT_FILENAME)
 

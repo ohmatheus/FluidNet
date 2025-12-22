@@ -1,9 +1,13 @@
 vdb_tools:
   blender_cache_directory: "./data/blender_caches"
   npz_output_directory: "./data/npz"
+  stats_percentiles: [75, 90, 95, 99, 100]
+  normalization_percentile: 100
+  stats_output_file: "data/_field_stats.yaml"
 
 models:
-  folder: "./data/onnx"
+  pytorch_folder: "./data/checkpoints/"
+  onnx_folder: "./data/onnx"
   default_index: 0
 
 simulation:

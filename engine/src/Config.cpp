@@ -3,6 +3,73 @@
 #include <stdexcept>
 #include <yaml-cpp/yaml.h>
 
+namespace YAML
+{
+
+template <> struct convert<FluidNet::EngineConfig>
+{
+    static bool decode(const Node& node, FluidNet::EngineConfig& config)
+    {
+        if (!node["window_width"] || !node["window_height"] || !node["gpu_enabled"])
+        {
+            return false;
+        }
+
+        config.windowWidth = node["window_width"].as<int>();
+        config.windowHeight = node["window_height"].as<int>();
+        config.gpuEnabled = node["gpu_enabled"].as<bool>();
+
+        config.onnxProviders.clear();
+        if (node["onnx_providers"] && node["onnx_providers"].IsSequence())
+        {
+            for (const auto& provider : node["onnx_providers"])
+            {
+                config.onnxProviders.push_back(provider.as<std::string>());
+            }
+        }
+
+        return true;
+    }
+};
+
+template <> struct convert<FluidNet::SimulationConfig>
+{
+    static bool decode(const Node& node, FluidNet::SimulationConfig& config)
+    {
+        if (node["fps"])
+        {
+            config.fps = node["fps"].as<float>();
+        }
+        if (node["grid_resolution"])
+        {
+            config.gridResolution = node["grid_resolution"].as<int>();
+        }
+        if (node["input_channels"])
+        {
+            config.inputChannels = node["input_channels"].as<int>();
+        }
+        return true;
+    }
+};
+
+template <> struct convert<FluidNet::ModelsConfig>
+{
+    static bool decode(const Node& node, FluidNet::ModelsConfig& config)
+    {
+        if (node["onnx_folder"])
+        {
+            config.onnxFolder = node["onnx_folder"].as<std::string>();
+        }
+        if (node["default_index"])
+        {
+            config.defaultIndex = node["default_index"].as<int>();
+        }
+        return true;
+    }
+};
+
+}
+
 namespace FluidNet
 {
 
@@ -18,60 +85,25 @@ void Config::loadFromYaml(const std::string& path)
     {
         YAML::Node config = YAML::LoadFile(path);
 
-        if (config["engine"])
-        {
-            const auto& engine = config["engine"];
-            m_windowWidth = engine["window_width"].as<int>();
-            m_windowHeight = engine["window_height"].as<int>();
-            m_gpuEnabled = engine["gpu_enabled"].as<bool>();
-
-            m_onnxProviders.clear();
-            if (engine["onnx_providers"])
-            {
-                for (const auto& provider : engine["onnx_providers"])
-                {
-                    m_onnxProviders.push_back(provider.as<std::string>());
-                }
-            }
-        }
-        else
+        if (!config["engine"])
         {
             throw std::runtime_error("Missing 'engine' section in config file");
         }
 
+        m_engineConfig = config["engine"].as<EngineConfig>();
+
         if (config["simulation"])
         {
-            const auto& simulation = config["simulation"];
-
-            if (simulation["fps"])
-            {
-                m_simulationFPS = simulation["fps"].as<float>();
-            }
-
-            if (simulation["grid_resolution"])
-            {
-                m_gridResolution = simulation["grid_resolution"].as<int>();
-            }
-
-            if (simulation["input_channels"])
-            {
-                m_inputChanels = simulation["input_channels"].as<int>();
-            }
+            m_simulationConfig = config["simulation"].as<SimulationConfig>();
         }
 
         if (config["models"])
         {
-            const auto& models = config["models"];
+            m_modelsConfig = config["models"].as<ModelsConfig>();
 
-            if (models["folder"])
+            if (!m_modelsConfig.onnxFolder.empty())
             {
-                m_modelsFolder = Paths::getProjectRoot() /
-                                 std::filesystem::path(models["folder"].as<std::string>());
-            }
-
-            if (models["default_index"])
-            {
-                m_defaultModelIndex = models["default_index"].as<int>();
+                m_resolvedModelsFolder = Paths::getProjectRoot() / m_modelsConfig.onnxFolder;
             }
         }
     }

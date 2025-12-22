@@ -1,10 +1,19 @@
+import importlib.util
 from pathlib import Path
 
-import yaml
-from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-PROJECT_ROOT_PATH = Path(__file__).parent.parent
+_PROJECT_ROOT = Path(__file__).parent.parent
+_SHARED_CONFIG_PATH = _PROJECT_ROOT / "shared" / "config.py"
+
+spec = importlib.util.spec_from_file_location("shared_config", _SHARED_CONFIG_PATH)
+if spec is None or spec.loader is None:
+    raise ImportError(f"Failed to load shared config from {_SHARED_CONFIG_PATH}")
+shared_config = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(shared_config)
+
+PROJECT_ROOT_PATH = shared_config.PROJECT_ROOT_PATH
+project_config = shared_config.project_config
 
 
 class VDBSettings(BaseSettings):
@@ -13,38 +22,10 @@ class VDBSettings(BaseSettings):
     BLENDER_PATH: Path = Path("")
 
 
-# -------------------
-class ProjectVDBConfig(BaseModel):
-    blender_cache_directory: Path
-    npz_output_directory: Path
-    stats_percentiles: list[int] = [75, 90, 95, 99, 100]
-    normalization_percentile: int
-    stats_output_file: str = "data/_field_stats.yaml"
-
-
-class SimulationConfig(BaseModel):
-    grid_resolution: int
-    input_channels: int
-
-
-class ProjectConfig(BaseModel):
-    simulation: SimulationConfig
-    vdb_tools: ProjectVDBConfig
-
-
-def load_project_config() -> ProjectConfig:
-    config_path = PROJECT_ROOT_PATH / "config.yaml"
-
-    if not config_path.exists():
-        raise FileNotFoundError(f"Configuration file not found: {config_path}")
-
-    with open(config_path) as f:
-        config_data = yaml.safe_load(f)
-
-    return ProjectConfig(**config_data)
-
-
-# -------------------
-
 vdb_config = VDBSettings()
-project_config = load_project_config()
+
+__all__ = [
+    "PROJECT_ROOT_PATH",
+    "project_config",
+    "vdb_config",
+]
