@@ -3,7 +3,7 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_PROJECT_ROOT = Path(__file__).parent.parent.parent
+_PROJECT_ROOT = Path(__file__).parent.parent
 _SHARED_CONFIG_PATH = _PROJECT_ROOT / "shared" / "config.py"
 
 spec = importlib.util.spec_from_file_location("shared_config", _SHARED_CONFIG_PATH)
@@ -15,18 +15,17 @@ spec.loader.exec_module(shared_config)
 PROJECT_ROOT_PATH = shared_config.PROJECT_ROOT_PATH
 project_config = shared_config.project_config
 
-ML_ROOT_PATH = Path(__file__).parent.parent
 
-
-class MLSettings(BaseSettings):
+class VDBSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", frozen=True)
 
+    BLENDER_PATH: Path = Path("")
 
-ml_config = MLSettings()
+
+vdb_config = VDBSettings()
 
 __all__ = [
     "PROJECT_ROOT_PATH",
-    "ML_ROOT_PATH",
     "project_config",
-    "ml_config",
+    "vdb_config",
 ]

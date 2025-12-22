@@ -3,14 +3,14 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 
-from config.config import PROJECT_ROOT_PATH
+from config.config import PROJECT_ROOT_PATH, project_config
 from models.small_unet import SmallUNet
 
 CHECKPOINT_FILENAME = "final_model.pth"
-RESOLUTION = 128
-INPUT_CHANNELS = 4
+RESOLUTION = project_config.simulation.grid_resolution
+INPUT_CHANNELS = project_config.simulation.input_channels
 BATCH_SIZE = 1
-ONNX_OPSET_VERSION = 17  # Modern opset with good compatibility
+ONNX_OPSET_VERSION = 18  # Modern opset with good compatibility
 DEVICE = "cuda"
 
 
@@ -99,8 +99,8 @@ def find_models_to_export(checkpoint_dir: Path, checkpoint_filename: str) -> lis
 
 
 def main() -> None:
-    checkpoint_dir = PROJECT_ROOT_PATH / "data/checkpoints"
-    output_dir = PROJECT_ROOT_PATH / "data/onnx"
+    checkpoint_dir = PROJECT_ROOT_PATH / project_config.models.pytorch_folder
+    output_dir = PROJECT_ROOT_PATH / project_config.models.onnx_folder
 
     models_to_export = find_models_to_export(checkpoint_dir, CHECKPOINT_FILENAME)
 

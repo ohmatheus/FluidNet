@@ -4,6 +4,9 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
+from config.config import PROJECT_ROOT_PATH, project_config
+from dataset.normalization import load_normalization_scales
+
 
 class FluidNPZSequenceDataset(Dataset):
     """
@@ -39,9 +42,13 @@ class FluidNPZSequenceDataset(Dataset):
         else:
             self.seq_paths = all_seq_paths
 
-        # Build index mapping and optionally compute per-sequence stats
+        # Build index mapping and load global normalization scales if needed
         self._index: list[tuple[int, int]] = []  # (seq_idx, t)
-        self._stats: list[tuple[np.ndarray, np.ndarray] | None] = [None] * len(self.seq_paths)
+        self._norm_scales: dict[str, float] | None = None
+
+        if self.normalize:
+            stats_path = PROJECT_ROOT_PATH / project_config.vdb_tools.stats_output_file
+            self._norm_scales = load_normalization_scales(stats_path)
 
         for si, path in enumerate(self.seq_paths):
             with np.load(path) as data:
@@ -64,29 +71,6 @@ class FluidNPZSequenceDataset(Dataset):
                 for t in range(1, T - 1):
                     if t <= T - 2:
                         self._index.append((si, t))
-
-                if self.normalize:
-                    # Compute per-sequence channel means/stds over (T,H,W)
-                    # channels: [density, velx, velz]
-                    c_means = np.array(
-                        [
-                            d.mean(dtype=np.float32),
-                            vx.mean(dtype=np.float32),
-                            vz.mean(dtype=np.float32),
-                        ],
-                        dtype=np.float32,
-                    )
-                    c_stds = np.array(
-                        [
-                            d.std(dtype=np.float32),
-                            vx.std(dtype=np.float32),
-                            vz.std(dtype=np.float32),
-                        ],
-                        dtype=np.float32,
-                    )
-                    # Avoid divide by zero
-                    c_stds = np.where(c_stds == 0, 1.0, c_stds)
-                    self._stats[si] = (c_means, c_stds)
 
         if not self._index:
             raise RuntimeError("No valid samples found (need T>=3 per sequence)")
@@ -113,19 +97,18 @@ class FluidNPZSequenceDataset(Dataset):
             vz_tp1 = vz[t + 1]
 
             if self.normalize:
-                stats = self._stats[si]
-                assert stats is not None, f"Stats should be computed for sequence {si} when normalize=True"
-                means, stds = stats
+                assert self._norm_scales is not None, "Normalization scales should be loaded when normalize=True"
+                scales = self._norm_scales
 
-                # Apply per-channel normalization - todo
-                d_t = (d_t - means[0]) / stds[0]
-                d_tminus = (d_tminus - means[0]) / stds[0]
-                vx_t = (vx_t - means[1]) / stds[1]
-                vz_t = (vz_t - means[2]) / stds[2]
+                # Apply global percentile-based normalization (no mean centering, just scaling)
+                d_t = d_t / scales["S_density"]
+                d_tminus = d_tminus / scales["S_density"]
+                vx_t = vx_t / scales["S_velx"]
+                vz_t = vz_t / scales["S_velz"]
 
-                d_tp1 = (d_tp1 - means[0]) / stds[0]
-                vx_tp1 = (vx_tp1 - means[1]) / stds[1]
-                vz_tp1 = (vz_tp1 - means[2]) / stds[2]
+                d_tp1 = d_tp1 / scales["S_density"]
+                vx_tp1 = vx_tp1 / scales["S_velx"]
+                vz_tp1 = vz_tp1 / scales["S_velz"]
 
             x = np.stack([d_t, vx_t, vz_t, d_tminus], axis=0)  # (4,H,W)
             y = np.stack([d_tp1, vx_tp1, vz_tp1], axis=0)  # (3,H,W)

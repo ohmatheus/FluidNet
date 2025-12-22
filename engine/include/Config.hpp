@@ -7,6 +7,27 @@
 namespace FluidNet
 {
 
+struct EngineConfig
+{
+    int windowWidth{1280};
+    int windowHeight{720};
+    bool gpuEnabled{true};
+    std::vector<std::string> onnxProviders;
+};
+
+struct SimulationConfig
+{
+    float fps{30.0f};
+    int gridResolution{128};
+    int inputChannels{0};
+};
+
+struct ModelsConfig
+{
+    std::filesystem::path onnxFolder;
+    int defaultIndex{0};
+};
+
 class Config
 {
 public:
@@ -21,60 +42,52 @@ public:
 
     int getWindowWidth() const
     {
-        return m_windowWidth;
+        return m_engineConfig.windowWidth;
     }
     int getWindowHeight() const
     {
-        return m_windowHeight;
+        return m_engineConfig.windowHeight;
     }
     bool isGpuEnabled() const
     {
-        return m_gpuEnabled;
+        return m_engineConfig.gpuEnabled;
     }
 
     float getSimulationFPS() const
     {
-        return m_simulationFPS;
+        return m_simulationConfig.fps;
     }
     int getGridResolution() const
     {
-        return m_gridResolution;
+        return m_simulationConfig.gridResolution;
     }
     int getInputChannels() const
     {
-        return m_inputChanels;
+        return m_simulationConfig.inputChannels;
     }
 
     const std::filesystem::path& getModelsFolder() const
     {
-        return m_modelsFolder;
+        return m_resolvedModelsFolder;
     }
     int getDefaultModelIndex() const
     {
-        return m_defaultModelIndex;
+        return m_modelsConfig.defaultIndex;
     }
 
     const std::vector<std::string>& getOnnxProviders() const
     {
-        return m_onnxProviders;
+        return m_engineConfig.onnxProviders;
     }
 
 private:
     Config() = default;
     ~Config() = default;
 
-    int m_windowWidth{1280};
-    int m_windowHeight{720};
-    bool m_gpuEnabled{true};
-
-    float m_simulationFPS{30.0f};
-    int m_gridResolution{128};
-    int m_inputChanels;
-
-    std::filesystem::path m_modelsFolder;
-    int m_defaultModelIndex{0};
-
-    std::vector<std::string> m_onnxProviders;
+    EngineConfig m_engineConfig;
+    SimulationConfig m_simulationConfig;
+    ModelsConfig m_modelsConfig;
+    std::filesystem::path m_resolvedModelsFolder;
 };
 
 }
