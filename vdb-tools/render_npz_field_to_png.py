@@ -4,8 +4,13 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from config import _PROJECT_ROOT, project_config
+
 # Available fields that can be rendered from NPZ files
-AVAILABLE_FIELDS = ["density", "velx", "velz", "vel_magnitude"]
+AVAILABLE_FIELDS = ["density", "velx", "velz", "vel_magnitude", "emitter"]
+
+INPUT_NPZ = _PROJECT_ROOT / project_config.vdb_tools.npz_output_directory / "seq_0001.npz"
+OUTPUT_DIR = _PROJECT_ROOT / "data/npz_image_debug/"
 
 
 def _ensure_dir(path: Path) -> None:
@@ -40,6 +45,7 @@ def render_npz_field(
         # Load the requested field
         if field == "density":
             field_data = data["density"]  # (T,H,W)
+            emitter_data = data["emitter"]  # (T,H,W) - always load emitter for density overlay
         elif field == "velx":
             field_data = data["velx"]  # (T,H,W)
         elif field == "velz":
@@ -49,6 +55,10 @@ def render_npz_field(
             velx = data["velx"]
             velz = data["velz"]
             field_data = np.sqrt(velx**2 + velz**2)  # (T,H,W)
+        elif field == "emitter":
+            field_data = data["emitter"]  # (T,H,W)
+        else:
+            raise ValueError(f"Unknown field: {field}")
 
         if field_data.ndim != 3:
             raise ValueError(f"Expected {field} to be (T,H,W), got {field_data.shape} in {npz_path}")
@@ -62,32 +72,72 @@ def render_npz_field(
     seq_field_dir = out_dir / seq_name / field
     _ensure_dir(seq_field_dir)
 
-    # Use sequence-wide normalization for consistency across frames
-    # For velocity components (can be negative), we want to handle the full range
-    d_min = float(field_data.min())
-    d_max = float(field_data.max())
-    span = d_max - d_min
-    if span <= 0:
-        norm = np.zeros_like(field_data, dtype=np.uint8)
-    else:
-        norm = np.clip(np.round((field_data - d_min) / span * 255.0), 0, 255).astype(np.uint8)
-
-    for t in range(T):
-        fname = f"frame_{t:04d}.png"
-        fpath = seq_field_dir / fname
-        img = Image.fromarray(norm[t], mode="L")
-        if scale and scale != 1:
-            try:
-                # Pillow >= 10 uses Image.Resampling
-                resample = Image.Resampling.BILINEAR  # getattr(Image, "Resampling", Image).BILINEAR
-            except Exception:
-                resample = Image.Resampling.BILINEAR
-            w, h = img.size
-            img = img.resize((w * scale, h * scale), resample=resample)
-            img.save(fpath)
+    # Special handling for density - render as RGB with green emitter overlay
+    if field == "density":
+        # Normalize density to 0-255
+        d_min = float(field_data.min())
+        d_max = float(field_data.max())
+        span = d_max - d_min
+        if span <= 0:
+            density_norm = np.zeros_like(field_data, dtype=np.uint8)
         else:
-            # Per-frame fallback conversion
-            _save_png(field_data[t], str(fpath))
+            density_norm = np.clip(np.round((field_data - d_min) / span * 255.0), 0, 255).astype(np.uint8)
+
+        for t in range(T):
+            fname = f"frame_{t:04d}.png"
+            fpath = seq_field_dir / fname
+
+            # Create RGB image: grayscale density + green emitter overlay
+            # Start with grayscale density (R=G=B)
+            rgb = np.stack([density_norm[t], density_norm[t], density_norm[t]], axis=-1)  # (H,W,3)
+
+            # Overlay emitter in pure green (R=0, G=255, B=0)
+            # Ensure emitter is truly binary (0 or 1)
+            emitter_mask = emitter_data[t] > 0.5  # Binary mask
+            rgb[emitter_mask, 0] = 0  # Red channel = 0
+            rgb[emitter_mask, 1] = 255  # Green channel = 255
+            rgb[emitter_mask, 2] = 0  # Blue channel = 0
+
+            # Scale image if needed
+            if scale and scale != 1:
+                try:
+                    resample = Image.Resampling.NEAREST
+                except Exception:
+                    resample = Image.Resampling.NEAREST
+                img = Image.fromarray(rgb, mode="RGB")
+                w, h = img.size
+                img = img.resize((w * scale, h * scale), resample=resample)
+                img.save(fpath)
+            else:
+                img = Image.fromarray(rgb, mode="RGB")
+                img.save(fpath)
+    else:
+        # Standard grayscale rendering for other fields
+        # Use sequence-wide normalization for consistency across frames
+        d_min = float(field_data.min())
+        d_max = float(field_data.max())
+        span = d_max - d_min
+        if span <= 0:
+            norm = np.zeros_like(field_data, dtype=np.uint8)
+        else:
+            norm = np.clip(np.round((field_data - d_min) / span * 255.0), 0, 255).astype(np.uint8)
+
+        for t in range(T):
+            fname = f"frame_{t:04d}.png"
+            fpath = seq_field_dir / fname
+            img = Image.fromarray(norm[t], mode="L")
+            if scale and scale != 1:
+                try:
+                    # Pillow >= 10 uses Image.Resampling
+                    resample = Image.Resampling.NEAREST
+                except Exception:
+                    resample = Image.Resampling.NEAREST
+                w, h = img.size
+                img = img.resize((w * scale, h * scale), resample=resample)
+                img.save(fpath)
+            else:
+                # Per-frame fallback conversion
+                _save_png(field_data[t], str(fpath))
 
     return T
 
@@ -110,8 +160,6 @@ def render_npz_all_fields(npz_path: Path, out_dir: Path, prefix: str | None = No
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Render fields from seq_*.npz to PNG images (grayscale)")
-    parser.add_argument("input", type=str, help="Path to a seq_*.npz file or a directory containing them")
-    parser.add_argument("output", type=str, help="Directory to write images")
     parser.add_argument(
         "--field",
         type=str,
@@ -122,8 +170,8 @@ def main() -> None:
     parser.add_argument("--scale", type=int, default=4, help="Upscale factor for output images (default: 4)")
     args = parser.parse_args()
 
-    input_path = Path(args.input)
-    output_path = Path(args.output)
+    input_path = Path(INPUT_NPZ)
+    output_path = Path(OUTPUT_DIR)
     _ensure_dir(output_path)
 
     processed = 0
@@ -155,7 +203,7 @@ def main() -> None:
         processed = 1
 
     field_desc = "all fields" if render_all else f"field: {args.field}"
-    print(f"Done. Processed {processed} sequence(s). {field_desc}. Output: {args.output}")
+    print(f"Done. Processed {processed} sequence(s). {field_desc}. Output: {OUTPUT_DIR}")
 
 
 if __name__ == "__main__":
