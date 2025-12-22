@@ -5,6 +5,7 @@ import numpy as np
 import openvdb  # type: ignore[import-not-found]
 
 from config import PROJECT_ROOT_PATH
+from vdb_core.abc_metadata import AlembicMetadata, extract_abc_metadata, find_abc_for_cache
 from vdb_core.grid_extraction import extract_density_field_avg, extract_velocity_components_avg
 from vdb_core.statistics import (
     SequenceStats,
@@ -15,7 +16,6 @@ from vdb_core.statistics import (
 )
 from vdb_core.transforms import apply_spatial_transforms
 from vdb_core.vdb_io import extract_frame_number, get_grid_names
-from vdb_core.abc_metadata import extract_abc_metadata, find_abc_for_cache
 
 
 def process_vdb_file(
@@ -137,7 +137,7 @@ def process_single_cache_sequence(
     save_frames: bool = False,
     starting_seq_number: int = 0,
     percentiles: list[int] | None = None,
-    abc_metadata=None,  # AlembicMetadata object
+    abc_metadata: AlembicMetadata | None = None,
 ) -> tuple[int, list[SequenceStats]]:
     cache_data_dir = Path(cache_data_dir)
     output_dir = Path(output_dir)
@@ -197,8 +197,8 @@ def process_single_cache_sequence(
             flip_z=True,
         )
 
-        assert(abc_metadata)
-        assert(frame_data)
+        assert abc_metadata
+        assert frame_data
         # Print mesh metadata for this frame
         if abc_metadata and abc_metadata.meshes:
             # Frame number is 1-indexed in Alembic, frame_idx is 0-indexed in VDB processing
@@ -207,7 +207,9 @@ def process_single_cache_sequence(
                 print(f"  Mesh data (frame {abc_metadata.frame_start + frame_idx}):")
                 for mesh in abc_metadata.meshes:
                     transform = mesh.transforms_per_frame[abc_frame_idx]
-                    print(f"    {mesh.name} ({mesh.geometry_type}): pos=[{transform.translation[0]:.3f}, {transform.translation[1]:.3f}, {transform.translation[2]:.3f}], scale=[{transform.scale[0]:.3f}, {transform.scale[1]:.3f}, {transform.scale[2]:.3f}]")
+                    print(
+                        f"    {mesh.name} ({mesh.geometry_type}): pos=[{transform.translation[0]:.3f}, {transform.translation[1]:.3f}, {transform.translation[2]:.3f}], scale=[{transform.scale[0]:.3f}, {transform.scale[1]:.3f}, {transform.scale[2]:.3f}]"
+                    )
         if frame_data:
             successful += 1
             # Only accept frames that have all required fields

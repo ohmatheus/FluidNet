@@ -1,7 +1,7 @@
 import json
 import sys
 
-import bpy # pyright: ignore
+import bpy  # pyright: ignore
 
 
 def extract_alembic_metadata(abc_path: str) -> dict:
@@ -14,7 +14,7 @@ def extract_alembic_metadata(abc_path: str) -> dict:
     meshes_data = []
 
     for obj in bpy.data.objects:
-        if obj.type == 'MESH':
+        if obj.type == "MESH":
             mesh = obj.data
 
             # Get vertex and face counts
@@ -47,9 +47,9 @@ def extract_alembic_metadata(abc_path: str) -> dict:
                     "rotation": [
                         [rotation_matrix[0][0], rotation_matrix[0][1], rotation_matrix[0][2]],
                         [rotation_matrix[1][0], rotation_matrix[1][1], rotation_matrix[1][2]],
-                        [rotation_matrix[2][0], rotation_matrix[2][1], rotation_matrix[2][2]]
+                        [rotation_matrix[2][0], rotation_matrix[2][1], rotation_matrix[2][2]],
                     ],
-                    "scale": [scale.x, scale.y, scale.z]
+                    "scale": [scale.x, scale.y, scale.z],
                 }
                 transforms.append(transform_data)
 
@@ -58,15 +58,11 @@ def extract_alembic_metadata(abc_path: str) -> dict:
                 "geometry_type": geometry_type,
                 "vertex_count": vertex_count,
                 "face_count": face_count,
-                "transforms": transforms
+                "transforms": transforms,
             }
             meshes_data.append(mesh_data)
 
-    output = {
-        "frame_start": frame_start,
-        "frame_end": frame_end,
-        "meshes": meshes_data
-    }
+    output = {"frame_start": frame_start, "frame_end": frame_end, "meshes": meshes_data}
 
     return output
 
@@ -74,9 +70,11 @@ def extract_alembic_metadata(abc_path: str) -> dict:
 if __name__ == "__main__":
     argv = sys.argv
     if "--" in argv:
-        argv = argv[argv.index("--") + 1:]
+        argv = argv[argv.index("--") + 1 :]
     else:
-        print("Error: No arguments provided. Usage: blender --background --python extract_alembic_metadata.py -- <abc_path>")
+        print(
+            "Error: No arguments provided. Usage: blender --background --python extract_alembic_metadata.py -- <abc_path>"
+        )
         sys.exit(1)
 
     if len(argv) < 1:
