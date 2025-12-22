@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+from typing import TextIO
 
 import numpy as np
 import torch
@@ -7,6 +8,15 @@ from PIL import Image
 
 from config.config import PROJECT_ROOT_PATH
 from inference.backend import InferenceBackend, ONNXBackend, PyTorchBackend
+
+
+def log_channel_stats(frame_idx: int, data: np.ndarray, label: str, log_file: TextIO) -> None:
+    density, velx, vely = data[0], data[1], data[2]
+    log_file.write(f"[Frame {frame_idx:04d}] {label}:\n")
+    log_file.write(f"  density: min={density.min():.6f}, max={density.max():.6f}\n")
+    log_file.write(f"  velx:    min={velx.min():.6f}, max={velx.max():.6f}\n")
+    log_file.write(f"  vely:    min={vely.min():.6f}, max={vely.max():.6f}\n")
+    log_file.flush()  # Ensure logs are written immediately
 
 
 def render_density_to_png(
@@ -171,6 +181,12 @@ def main() -> None:
 
     density_frames = []
 
+    # Create log file for debug output
+    output_dir.mkdir(parents=True, exist_ok=True)
+    log_file_path = output_dir / "inference_debug.txt"
+    log_file = open(log_file_path, "w")
+    print(f"Debug logs will be saved to: {log_file_path.resolve()}")
+
     # Autoregressive rollout
     for frame_idx in range(args.num_frames):
         # [density_t, velx_t, vely_t, density_{t-1}]
@@ -178,8 +194,8 @@ def main() -> None:
         # state_prev: [density_{t-1}, velx_{t-1}, vely_{t-1}]
 
         # Inject density like in blender sim
-        state_prev[0][circle_mask] += INJECTED_DENSITY
-        state_current[0][circle_mask] += INJECTED_DENSITY
+        state_prev[0][circle_mask] = INJECTED_DENSITY
+        state_current[0][circle_mask] = INJECTED_DENSITY
 
         # Build model input
         model_input = np.concatenate(
@@ -190,6 +206,9 @@ def main() -> None:
             axis=0,
         )  # Shape: (4, H, W)
 
+        # Log input statistics (first 3 channels: density, velx, vely)
+        log_channel_stats(frame_idx, model_input[:3], "INPUT", log_file)
+
         # Add batch dimension
         model_input = model_input[np.newaxis, ...]  # Shape: (1, 4, H, W)
 
@@ -197,6 +216,9 @@ def main() -> None:
 
         # Remove batch dimension
         output = output[0]  # Shape: (3, H, W)
+
+        # Log output statistics
+        log_channel_stats(frame_idx, output, "OUTPUT", log_file)
 
         # Extract density for visualization
         density = output[0]  # Shape: (H, W)
@@ -208,6 +230,8 @@ def main() -> None:
 
         if (frame_idx + 1) % 10 == 0:
             print(f"  Generated frame {frame_idx + 1}/{args.num_frames}")
+
+    log_file.close()
 
     print("\nGeneration complete. Saving visualizations...")
 

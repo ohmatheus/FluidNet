@@ -317,6 +317,7 @@ void Renderer::render(const SimulationBuffer& state)
     // Bind framebuffer for offscreen rendering
     FluidNet::GL::glBindFramebuffer(GL_FRAMEBUFFER, m_framebuffer);
     glViewport(0, 0, m_fbWidth, m_fbHeight);
+    glClearColor(0, 0.3, 0.5, 1);
     glClear(GL_COLOR_BUFFER_BIT);
 
     FluidNet::GL::glUseProgram(m_shaderProgram);

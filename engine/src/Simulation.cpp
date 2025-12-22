@@ -24,7 +24,7 @@ void injectDebugDensityCircle(FluidNet::SimulationBuffer& current,
         return;
     }
 
-    const float injectedDensity = 0.8f;
+    const float injectedDensity = 1.f;
     const int radius = 20;
     const int centerX = gridRes / 2;
     const int centerY = gridRes / 2 + 30;
@@ -49,8 +49,8 @@ void injectDebugDensityCircle(FluidNet::SimulationBuffer& current,
                 const size_t idx =
                     static_cast<size_t>(y) * static_cast<size_t>(gridRes) + static_cast<size_t>(x);
 
-                current.density[idx] += injectedDensity;
-                previous.density[idx] += injectedDensity; // density_{t-1}
+                current.density[idx] = injectedDensity;
+                previous.density[idx] = injectedDensity; // density_{t-1}
             }
         }
     }
