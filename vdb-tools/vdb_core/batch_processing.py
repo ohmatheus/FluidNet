@@ -15,6 +15,7 @@ from vdb_core.statistics import (
 )
 from vdb_core.transforms import apply_spatial_transforms
 from vdb_core.vdb_io import extract_frame_number, get_grid_names
+from vdb_core.abc_metadata import extract_abc_metadata, find_abc_for_cache
 
 
 def process_vdb_file(
@@ -136,6 +137,7 @@ def process_single_cache_sequence(
     save_frames: bool = False,
     starting_seq_number: int = 0,
     percentiles: list[int] | None = None,
+    abc_metadata=None,  # AlembicMetadata object
 ) -> tuple[int, list[SequenceStats]]:
     cache_data_dir = Path(cache_data_dir)
     output_dir = Path(output_dir)
@@ -156,6 +158,16 @@ def process_single_cache_sequence(
     seq_len = deduced
     print(f"Deduced sequence length: {seq_len} (from folder contents)")
 
+    # Validate that ABC animation has same number of frames of the sequence length
+    if abc_metadata:
+        abc_frame_count = abc_metadata.frame_end - abc_metadata.frame_start + 1
+        assert abc_frame_count == seq_len, (
+            f"Alembic animation frame count mismatch: "
+            f"ABC has {abc_frame_count} frames ({abc_metadata.frame_start}-{abc_metadata.frame_end}), "
+            f"but sequence length is {seq_len}. "
+            f"ABC animation must have at least {seq_len} frames to match the VDB sequence."
+        )
+
     if max_frames:
         vdb_files = vdb_files[:max_frames]
         print(f"Processing first {len(vdb_files)} files")
@@ -175,7 +187,7 @@ def process_single_cache_sequence(
     velz_frames = []
     hw_ref = None
 
-    for _i, vdb_file in enumerate(vdb_files):
+    for frame_idx, vdb_file in enumerate(vdb_files):
         frame_data = process_vdb_file(
             vdb_file,
             output_dir,
@@ -184,6 +196,18 @@ def process_single_cache_sequence(
             save_frames=save_frames,
             flip_z=True,
         )
+
+        assert(abc_metadata)
+        assert(frame_data)
+        # Print mesh metadata for this frame
+        if abc_metadata and abc_metadata.meshes:
+            # Frame number is 1-indexed in Alembic, frame_idx is 0-indexed in VDB processing
+            abc_frame_idx = frame_idx  # Alembic frames start at frame_start
+            if abc_frame_idx < len(abc_metadata.meshes[0].transforms_per_frame):
+                print(f"  Mesh data (frame {abc_metadata.frame_start + frame_idx}):")
+                for mesh in abc_metadata.meshes:
+                    transform = mesh.transforms_per_frame[abc_frame_idx]
+                    print(f"    {mesh.name} ({mesh.geometry_type}): pos=[{transform.translation[0]:.3f}, {transform.translation[1]:.3f}, {transform.translation[2]:.3f}], scale=[{transform.scale[0]:.3f}, {transform.scale[1]:.3f}, {transform.scale[2]:.3f}]")
         if frame_data:
             successful += 1
             # Only accept frames that have all required fields
@@ -290,6 +314,7 @@ def process_all_cache_sequences(
     global_seq_counter = 0
     total_sequences = 0
     all_sequence_stats: list[SequenceStats] = []
+    all_mesh_metadata = {}  # Store mesh metadata from all caches
 
     for cache_data_dir in cache_data_dirs:
         cache_name = cache_data_dir.parent.name
@@ -297,7 +322,14 @@ def process_all_cache_sequences(
         print(f"Processing cache: {cache_name}")
         print(f"{'=' * 60}")
 
-        # Process this cache's VDB files
+        # Extract Alembic metadata for this sequence
+        abc_path = find_abc_for_cache(cache_data_dir, blender_caches_root)
+        abc_metadata = extract_abc_metadata(abc_path, cache_name)
+
+        # Store mesh metadata for YAML
+        all_mesh_metadata[cache_name] = abc_metadata.to_dict()
+
+        # Process this cache's VDB files (mesh metadata will be printed per frame)
         sequences_from_cache, cache_stats = process_single_cache_sequence(
             cache_data_dir=cache_data_dir,
             output_dir=output_dir,
@@ -306,6 +338,7 @@ def process_all_cache_sequences(
             save_frames=save_frames,
             starting_seq_number=global_seq_counter,
             percentiles=percentiles_to_use,
+            abc_metadata=abc_metadata,
         )
 
         global_seq_counter += sequences_from_cache
@@ -326,6 +359,7 @@ def process_all_cache_sequences(
                 sequence_stats=all_sequence_stats,
                 global_stats=global_stats,
                 normalization_scales=normalization_scales,
+                mesh_metadata=all_mesh_metadata,
             )
 
             print(f"\n{'=' * 60}")

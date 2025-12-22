@@ -164,6 +164,7 @@ def save_stats_to_yaml(
     sequence_stats: list[SequenceStats],
     global_stats: GlobalStats,
     normalization_scales: NormalizationScales,
+    mesh_metadata: dict | None = None,
 ) -> None:
     output_data = {
         "metadata": {
@@ -175,6 +176,10 @@ def save_stats_to_yaml(
         "global_stats": global_stats.to_dict(),
         "per_sequence_stats": [seq_stat.to_dict() for seq_stat in sequence_stats],
     }
+
+    # Add mesh metadata if available
+    if mesh_metadata:
+        output_data["mesh_metadata"] = mesh_metadata
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
