@@ -65,12 +65,16 @@ def main() -> None:
 
     print(f"Dataset splits: train={len(train_idx)}, val={len(val_idx)}, test={len(test_idx)}")
 
-    train_ds = FluidNPZSequenceDataset(npz_dir=config.npz_dir, normalize=config.normalize, seq_indices=train_idx)
-    val_ds = FluidNPZSequenceDataset(npz_dir=config.npz_dir, normalize=config.normalize, seq_indices=val_idx)
+    train_ds = FluidNPZSequenceDataset(
+        npz_dir=config.npz_dir, normalize=config.normalize, seq_indices=train_idx, fake_empty_pct=5
+    )
+    val_ds = FluidNPZSequenceDataset(
+        npz_dir=config.npz_dir, normalize=config.normalize, seq_indices=val_idx, fake_empty_pct=5
+    )
 
     # to compare models later
     # test_ds = FluidNPZSequenceDataset(
-    #    npz_dir=config.npz_dir, normalize=config.normalize, seq_indices=test_idx
+    #    npz_dir=config.npz_dir, normalize=config.normalize, seq_indices=test_idx, fake_empty_pct=5
     # )
 
     print(f"Training samples: {len(train_ds)}, Validation samples: {len(val_ds)}")
