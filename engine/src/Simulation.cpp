@@ -243,8 +243,9 @@ void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer*
 
         // writing front buffer from this thread is not ok
         // data race !
-        // todo - find workaround 
-        // -> don't add emiter mask in buffer, have another emitter_mask buffer directly injected to simulation input
+        // todo - find workaround
+        // -> don't add emiter mask in buffer, have another emitter_mask buffer directly injected to
+        // simulation input
         setupEmitterMask(frontBuf->emitterMask, gridRes);
 
         const int64_t inputShape[] = {1, inputChannels, gridRes, gridRes};
