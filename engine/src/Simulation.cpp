@@ -241,7 +241,10 @@ void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer*
         const int gridRes = frontBuf->gridResolution;
         const size_t planeSize = static_cast<size_t>(gridRes) * static_cast<size_t>(gridRes);
 
-        setupEmitterMask(frontBuf->emitterMask, gridRes);
+        // writing front buffer from this thread is not ok
+        // data race !
+        // todo - find workaround
+        setupEmitterMask(frontBuf->emitterMask, gridRes); 
 
         const int64_t inputShape[] = {1, inputChannels, gridRes, gridRes};
         const size_t inputSize = inputChannels * planeSize;
