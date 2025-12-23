@@ -23,7 +23,7 @@ def render_density_to_png(
     density_fields: list[np.ndarray],
     output_dir: Path,
     scale: int = 4,
-    use_global_norm: bool = True,
+    use_global_norm: bool = False,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -52,16 +52,9 @@ def render_density_to_png(
 
         print(f"Saved {len(density_fields)} frames with global normalization (range: [{d_min:.4f}, {d_max:.4f}])")
     else:
-        # Per-frame normalization
+        # No normalization - direct clipping to [0, 255]
         for i, density in enumerate(density_fields):
-            d_min = float(density.min())
-            d_max = float(density.max())
-            span = d_max - d_min
-
-            if span > 0:
-                norm = np.clip(np.round((density - d_min) / span * 255.0), 0, 255).astype(np.uint8)
-            else:
-                norm = np.zeros_like(density, dtype=np.uint8)
+            norm = np.clip(np.round(density * 255.0), 0, 255).astype(np.uint8)
 
             img = Image.fromarray(norm, mode="L")
             if scale > 1:
@@ -71,7 +64,7 @@ def render_density_to_png(
             fname = f"frame_{i:04d}.png"
             img.save(output_dir / fname)
 
-        print(f"Saved {len(density_fields)} frames with per-frame normalization")
+        print(f"Saved {len(density_fields)} frames without normalization (direct clipping)")
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
@@ -127,8 +120,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = create_argument_parser().parse_args()
 
-    INJECTED_DENSITY = 0.8
-    USE_GLOBAL_NORM = True
+    USE_GLOBAL_NORM = False
 
     if args.backend == "pytorch":
         backend: InferenceBackend = PyTorchBackend()
@@ -158,9 +150,9 @@ def main() -> None:
     state_prev = np.zeros((3, args.resolution, args.resolution), dtype=np.float32)
     state_current = np.zeros((3, args.resolution, args.resolution), dtype=np.float32)
 
-    circle_radius = 20
+    circle_radius = 10
     center_x = args.resolution // 2
-    center_y = args.resolution // 2 + 30  # Near bottom
+    center_y = args.resolution // 2 + 50  # Near bottom
 
     # Create coordinate grids
     y_coords, x_coords = np.meshgrid(np.arange(args.resolution), np.arange(args.resolution), indexing="ij")
@@ -170,14 +162,13 @@ def main() -> None:
     # Create circular mask
     circle_mask = dist <= circle_radius
 
-    # Set density inside the circle for both frames
-    state_prev[0][circle_mask] = INJECTED_DENSITY
-    state_current[0][circle_mask] = INJECTED_DENSITY
+    # Create binary emitter mask (1 inside circle, 0 outside)
+    # This is a static mask - same for all frames
+    emitter_mask = np.zeros((args.resolution, args.resolution), dtype=np.float32)
+    emitter_mask[circle_mask] = 1.0
 
     print(f"\nStarting autoregressive rollout for {args.num_frames} frames...")
-    print(
-        f"Initial condition: circle of density={INJECTED_DENSITY} (radius={circle_radius}) at ({center_x}, {center_y})"
-    )
+    print("Emitter mask: binary circle (1 inside, 0 outside) - static for all frames")
 
     density_frames = []
 
@@ -189,28 +180,22 @@ def main() -> None:
 
     # Autoregressive rollout
     for frame_idx in range(args.num_frames):
-        # [density_t, velx_t, vely_t, density_{t-1}]
-        # state_current: [density_t, velx_t, vely_t]
-        # state_prev: [density_{t-1}, velx_{t-1}, vely_{t-1}]
+        emitter_channel = emitter_mask[np.newaxis, ...]  # Shape: (1, H, W)
 
-        # Inject density like in blender sim
-        state_prev[0][circle_mask] = INJECTED_DENSITY
-        state_current[0][circle_mask] = INJECTED_DENSITY
-
-        # Build model input
         model_input = np.concatenate(
             [
                 state_current,  # [density_t, velx_t, vely_t]
                 state_prev[0:1],  # [density_{t-1}]
+                emitter_channel,  # [emitter_mask]
             ],
             axis=0,
-        )  # Shape: (4, H, W)
+        )  # Shape: (5, H, W)
 
         # Log input statistics (first 3 channels: density, velx, vely)
         log_channel_stats(frame_idx, model_input[:3], "INPUT", log_file)
 
         # Add batch dimension
-        model_input = model_input[np.newaxis, ...]  # Shape: (1, 4, H, W)
+        model_input = model_input[np.newaxis, ...]  # Shape: (1, 5, H, W)
 
         output = backend.infer(model_input)  # Shape: (1, 3, H, W)
 

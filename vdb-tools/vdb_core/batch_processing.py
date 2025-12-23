@@ -5,6 +5,8 @@ import numpy as np
 import openvdb  # type: ignore[import-not-found]
 
 from config import PROJECT_ROOT_PATH
+from vdb_core.abc_metadata import AlembicMetadata, extract_abc_metadata, find_abc_for_cache
+from vdb_core.emitter_projection import project_mesh_to_grid, validate_emitter_mesh
 from vdb_core.grid_extraction import extract_density_field_avg, extract_velocity_components_avg
 from vdb_core.statistics import (
     SequenceStats,
@@ -15,6 +17,10 @@ from vdb_core.statistics import (
 )
 from vdb_core.transforms import apply_spatial_transforms
 from vdb_core.vdb_io import extract_frame_number, get_grid_names
+
+AXIS_ORDER = "ZX"
+FLIP_X = True
+FLIP_Z = True
 
 
 def process_vdb_file(
@@ -136,6 +142,7 @@ def process_single_cache_sequence(
     save_frames: bool = False,
     starting_seq_number: int = 0,
     percentiles: list[int] | None = None,
+    abc_metadata: AlembicMetadata | None = None,
 ) -> tuple[int, list[SequenceStats]]:
     cache_data_dir = Path(cache_data_dir)
     output_dir = Path(output_dir)
@@ -156,6 +163,16 @@ def process_single_cache_sequence(
     seq_len = deduced
     print(f"Deduced sequence length: {seq_len} (from folder contents)")
 
+    # Validate that ABC animation has same number of frames of the sequence length
+    if abc_metadata:
+        abc_frame_count = abc_metadata.frame_end - abc_metadata.frame_start + 1
+        assert abc_frame_count == seq_len, (
+            f"Alembic animation frame count mismatch: "
+            f"ABC has {abc_frame_count} frames ({abc_metadata.frame_start}-{abc_metadata.frame_end}), "
+            f"but sequence length is {seq_len}. "
+            f"ABC animation must have at least {seq_len} frames to match the VDB sequence."
+        )
+
     if max_frames:
         vdb_files = vdb_files[:max_frames]
         print(f"Processing first {len(vdb_files)} files")
@@ -173,17 +190,54 @@ def process_single_cache_sequence(
     density_frames = []  # List[np.ndarray]
     velx_frames = []
     velz_frames = []
+    emitter_frames = []
     hw_ref = None
+    assert abc_metadata
 
-    for _i, vdb_file in enumerate(vdb_files):
+    # Validate emitter mesh
+    emitter_mesh = validate_emitter_mesh(abc_metadata)
+    print(f"Validated emitter mesh: '{emitter_mesh.name}' ({emitter_mesh.geometry_type})")
+
+    for frame_idx, vdb_file in enumerate(vdb_files):
+        # Print mesh metadata for this frame
+        if abc_metadata and abc_metadata.meshes:
+            # Frame number is 1-indexed in Alembic, frame_idx is 0-indexed in VDB processing
+            abc_frame_idx = frame_idx  # Alembic frames start at frame_start
+            if abc_frame_idx < len(abc_metadata.meshes[0].transforms_per_frame):
+                print(f"  Mesh data (frame {abc_metadata.frame_start + frame_idx}):")
+                for mesh in abc_metadata.meshes:
+                    transform = mesh.transforms_per_frame[abc_frame_idx]
+                    print(
+                        f"    {mesh.name} ({mesh.geometry_type}): pos=[{transform.translation[0]:.3f}, {transform.translation[1]:.3f}, {transform.translation[2]:.3f}], scale=[{transform.scale[0]:.3f}, {transform.scale[1]:.3f}, {transform.scale[2]:.3f}]"
+                    )
+
         frame_data = process_vdb_file(
             vdb_file,
             output_dir,
-            axis_order="ZX",
+            axis_order=AXIS_ORDER,
             target_resolution=target_resolution,
             save_frames=save_frames,
-            flip_z=True,
+            flip_x=FLIP_X,
+            flip_z=FLIP_Z,
         )
+        assert frame_data
+
+        # Process emitter mesh for this frame
+        transform = emitter_mesh.transforms_per_frame[frame_idx]
+        emitter_mask = project_mesh_to_grid(
+            transform=transform,
+            geometry_type=emitter_mesh.geometry_type,
+            grid_resolution=target_resolution,
+        )
+
+        emitter_mask = apply_spatial_transforms(
+            emitter_mask,
+            axis_order=AXIS_ORDER,
+            flip_x=FLIP_X,
+            flip_z=FLIP_Z,
+            velocity_component=None,
+        )
+
         if frame_data:
             successful += 1
             # Only accept frames that have all required fields
@@ -194,14 +248,15 @@ def process_single_cache_sequence(
 
                 if hw_ref is None:
                     hw_ref = d.shape
-                if d.shape != hw_ref or vx.shape != hw_ref or vz.shape != hw_ref:
+                if d.shape != hw_ref or vx.shape != hw_ref or vz.shape != hw_ref or emitter_mask.shape != hw_ref:
                     print(
-                        f"    Warning: skipping frame due to shape mismatch. Expected {hw_ref}, got d={d.shape}, vx={vx.shape}, vz={vz.shape}"
+                        f"    Warning: skipping frame due to shape mismatch. Expected {hw_ref}, got d={d.shape}, vx={vx.shape}, vz={vz.shape}, emitter={emitter_mask.shape}"
                     )
                 else:
                     density_frames.append(d)
                     velx_frames.append(vx)
                     velz_frames.append(vz)
+                    emitter_frames.append(emitter_mask.astype(np.float32, copy=False))
 
                 # Check if we got actual data
                 has_nonzero_data = np.any(d != 0) or np.any(vx != 0) or np.any(vz != 0)
@@ -235,13 +290,20 @@ def process_single_cache_sequence(
         d_stack = np.stack(density_frames[start:end], axis=0).astype(np.float32, copy=False)
         x_stack = np.stack(velx_frames[start:end], axis=0).astype(np.float32, copy=False)
         z_stack = np.stack(velz_frames[start:end], axis=0).astype(np.float32, copy=False)
+        e_stack = np.stack(emitter_frames[start:end], axis=0).astype(np.float32, copy=False)
 
         # Use global sequence numbering
         global_seq_num = starting_seq_number + s
         out_name = f"seq_{global_seq_num:04d}.npz"
         out_path = output_dir / out_name
-        np.savez_compressed(out_path, density=d_stack, velx=x_stack, velz=z_stack)
-        print(f"Saved {out_path}  shape: T={T}, H={H}, W={W}")
+        np.savez_compressed(
+            out_path,
+            density=d_stack,
+            velx=x_stack,
+            velz=z_stack,
+            emitter=e_stack,
+        )
+        print(f"Saved {out_path}  shape: T={T}, H={H}, W={W} (density, velx, velz, emitter)")
 
         # Compute statistics for this sequence
         try:
@@ -290,6 +352,7 @@ def process_all_cache_sequences(
     global_seq_counter = 0
     total_sequences = 0
     all_sequence_stats: list[SequenceStats] = []
+    all_mesh_metadata = {}  # Store mesh metadata from all caches
 
     for cache_data_dir in cache_data_dirs:
         cache_name = cache_data_dir.parent.name
@@ -297,7 +360,14 @@ def process_all_cache_sequences(
         print(f"Processing cache: {cache_name}")
         print(f"{'=' * 60}")
 
-        # Process this cache's VDB files
+        # Extract Alembic metadata for this sequence
+        abc_path = find_abc_for_cache(cache_data_dir, blender_caches_root)
+        abc_metadata = extract_abc_metadata(abc_path, cache_name)
+
+        # Store mesh metadata for YAML
+        all_mesh_metadata[cache_name] = abc_metadata.to_dict()
+
+        # Process this cache's VDB files (mesh metadata will be printed per frame)
         sequences_from_cache, cache_stats = process_single_cache_sequence(
             cache_data_dir=cache_data_dir,
             output_dir=output_dir,
@@ -306,6 +376,7 @@ def process_all_cache_sequences(
             save_frames=save_frames,
             starting_seq_number=global_seq_counter,
             percentiles=percentiles_to_use,
+            abc_metadata=abc_metadata,
         )
 
         global_seq_counter += sequences_from_cache
@@ -326,6 +397,7 @@ def process_all_cache_sequences(
                 sequence_stats=all_sequence_stats,
                 global_stats=global_stats,
                 normalization_scales=normalization_scales,
+                mesh_metadata=all_mesh_metadata,
             )
 
             print(f"\n{'=' * 60}")
