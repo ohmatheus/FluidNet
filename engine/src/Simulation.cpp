@@ -7,35 +7,15 @@
 
 namespace
 {
-constexpr bool kEnableDebugDensityInjector = true;
-
-// Continuously inject density in a circle at center-bottom of the grid
-void injectDebugDensityCircle(FluidNet::SimulationBuffer& current,
-                              FluidNet::SimulationBuffer& previous)
+void setupEmitterMask(std::vector<float>& emitterMask, int gridRes)
 {
-    if (!kEnableDebugDensityInjector)
-    {
-        return;
-    }
-
-    const int gridRes = current.gridResolution;
-    if (gridRes <= 0)
-    {
-        return;
-    }
-
-    const float injectedDensity = 1.f;
-    const int radius = 20;
-    const int centerX = gridRes / 2;
-    const int centerY = gridRes / 2 + 30;
-
-    const int radiusSq = radius * radius;
-
     const size_t planeSize = static_cast<size_t>(gridRes) * static_cast<size_t>(gridRes);
-    if (current.density.size() != planeSize || previous.density.size() != planeSize)
-    {
-        return; // sizes not as expected, avoid UB in debug utility
-    }
+    std::fill(emitterMask.begin(), emitterMask.end(), 0.0f);
+
+    const int radius = 10;
+    const int centerX = gridRes / 2;
+    const int centerY = gridRes / 2 + 50;
+    const int radiusSq = radius * radius;
 
     for (int y = 0; y < gridRes; ++y)
     {
@@ -48,9 +28,7 @@ void injectDebugDensityCircle(FluidNet::SimulationBuffer& current,
             {
                 const size_t idx =
                     static_cast<size_t>(y) * static_cast<size_t>(gridRes) + static_cast<size_t>(x);
-
-                current.density[idx] = injectedDensity;
-                previous.density[idx] = injectedDensity; // density_{t-1}
+                emitterMask[idx] = 1.0f;
             }
         }
     }
@@ -256,8 +234,6 @@ void Simulation::workerLoop_()
 
 void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer* backBuf)
 {
-    // frontBuf->density: density_t
-    // backBuf->density:  density_{t-1}
     int inputChannels = FluidNet::Config::getInstance().getInputChannels();
 
     try
@@ -265,33 +241,25 @@ void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer*
         const int gridRes = frontBuf->gridResolution;
         const size_t planeSize = static_cast<size_t>(gridRes) * static_cast<size_t>(gridRes);
 
-        // dummy debug: continuously inject density in a circle
-        injectDebugDensityCircle(*frontBuf, *backBuf);
+        setupEmitterMask(frontBuf->emitterMask, gridRes);
 
-        // Model input: (1, 4, H, W) = [density_t, velx_t, vely_t, density_{t-1}]
         const int64_t inputShape[] = {1, inputChannels, gridRes, gridRes};
-        const size_t inputSize = static_cast<size_t>(inputChannels) * planeSize;
+        const size_t inputSize = inputChannels * planeSize;
 
         std::vector<float> inputData(inputSize);
 
-        // Channel 0: density_t  (front)
         std::memcpy(&inputData[0 * planeSize], frontBuf->density.data(), planeSize * sizeof(float));
-
-        // Channel 1: velx_t     (front)
         std::memcpy(&inputData[1 * planeSize], frontBuf->velocityX.data(),
                     planeSize * sizeof(float));
-
-        // Channel 2: vely_t     (front)
         std::memcpy(&inputData[2 * planeSize], frontBuf->velocityY.data(),
                     planeSize * sizeof(float));
-
-        // Channel 3: density_{t-1}  (back)
         std::memcpy(&inputData[3 * planeSize], backBuf->density.data(), planeSize * sizeof(float));
+        std::memcpy(&inputData[4 * planeSize], frontBuf->emitterMask.data(),
+                    planeSize * sizeof(float));
 
-        // Create input tensor
         auto memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-        Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
-            memoryInfo, inputData.data(), inputSize, inputShape, inputChannels);
+        Ort::Value inputTensor =
+            Ort::Value::CreateTensor<float>(memoryInfo, inputData.data(), inputSize, inputShape, 4);
 
         // Get input/output names
         Ort::AllocatorWithDefaultOptions allocator;
@@ -311,8 +279,7 @@ void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer*
             std::vector<int64_t> outputShape =
                 outputTensors[0].GetTensorTypeAndShapeInfo().GetShape();
 
-            // Basic sanity check
-            if (outputShape.size() != inputChannels || outputShape[0] != 1 || outputShape[1] != 3 ||
+            if (outputShape.size() != 4 || outputShape[0] != 1 || outputShape[1] != 3 ||
                 outputShape[2] != gridRes || outputShape[3] != gridRes)
             {
                 std::cerr << "Unexpected ONNX output shape: [";

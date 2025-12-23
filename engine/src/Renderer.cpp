@@ -12,43 +12,6 @@
 
 namespace
 {
-constexpr bool kEnableDebugDensityVisNormalization = true;
-
-void normalizeDensityForDisplay(std::vector<float>& density)
-{
-    if (!kEnableDebugDensityVisNormalization || density.empty())
-    {
-        return;
-    }
-
-    float dMin = density[0];
-    float dMax = density[0];
-    for (float v : density)
-    {
-        if (v < dMin)
-            dMin = v;
-        if (v > dMax)
-            dMax = v;
-    }
-
-    const float span = dMax - dMin;
-    if (span <= 1e-8f)
-    {
-        std::fill(density.begin(), density.end(), 0.0f);
-        return;
-    }
-
-    const float invSpan = 1.0f / span;
-    for (float& v : density)
-    {
-        float n = (v - dMin) * invSpan; // map to [0,1]
-        if (n < 0.0f)
-            n = 0.0f;
-        if (n > 1.0f)
-            n = 1.0f;
-        v = n;
-    }
-}
 
 std::string readShaderFile(const std::string& filepath)
 {
@@ -245,8 +208,6 @@ void Renderer::compileShaders_()
 
 void Renderer::createQuad_()
 {
-    int inputChannels = FluidNet::Config::getInstance().getInputChannels();
-
     // quad, position & flipped texture coordinates (v -> 1 - v)
     float vertices[] = {
         -1.0f, 1.0f,  0.0f, 0.0f, // top-left  -> (0,0)
@@ -259,19 +220,16 @@ void Renderer::createQuad_()
 
     FluidNet::GL::glGenVertexArrays(1, &m_vao);
     FluidNet::GL::glGenBuffers(1, &m_vbo);
-
     FluidNet::GL::glBindVertexArray(m_vao);
-
     FluidNet::GL::glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
     FluidNet::GL::glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
     // Position attribute
-    FluidNet::GL::glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, inputChannels * sizeof(float),
-                                        (void*)0);
+    FluidNet::GL::glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
     FluidNet::GL::glEnableVertexAttribArray(0);
 
     // Texture coordinate attribute
-    FluidNet::GL::glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, inputChannels * sizeof(float),
+    FluidNet::GL::glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
                                         (void*)(2 * sizeof(float)));
     FluidNet::GL::glEnableVertexAttribArray(1);
 
@@ -294,8 +252,6 @@ void Renderer::uploadToGPU_(const SimulationBuffer& state)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RG32F, res, res, 0, GL_RG, GL_FLOAT, velocityRG.data());
 
     std::vector<float> densityVis = state.density;
-
-    normalizeDensityForDisplay(densityVis);
 
     // Upload density as R texture
     glBindTexture(GL_TEXTURE_2D, m_densityTexture);
