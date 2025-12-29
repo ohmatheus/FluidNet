@@ -6,8 +6,8 @@ import openvdb  # type: ignore[import-not-found]
 
 from config import PROJECT_ROOT_PATH
 from vdb_core.abc_metadata import AlembicMetadata, extract_abc_metadata, find_abc_for_cache
-from vdb_core.emitter_projection import project_mesh_to_grid, validate_emitter_mesh
 from vdb_core.grid_extraction import extract_density_field_avg, extract_velocity_components_avg
+from vdb_core.mesh_projection import project_mesh_to_grid, validate_collider_meshes, validate_emitter_meshes
 from vdb_core.statistics import (
     SequenceStats,
     aggregate_global_stats,
@@ -134,6 +134,38 @@ def discover_cache_sequences(blender_caches_root: Path) -> list[Path]:
     return cache_data_dirs
 
 
+def process_mesh_masks_for_frame(
+    mesh_list: list,
+    frame_idx: int,
+    target_resolution: int,
+    axis_order: str,
+    flip_x: bool,
+    flip_z: bool,
+) -> np.ndarray:
+    combined_mask = np.zeros((target_resolution, target_resolution), dtype=np.float32)
+
+    for mesh in mesh_list:
+        transform = mesh.transforms_per_frame[frame_idx]
+        single_mask = project_mesh_to_grid(
+            transform=transform,
+            geometry_type=mesh.geometry_type,
+            grid_resolution=target_resolution,
+        )
+
+        single_mask = apply_spatial_transforms(
+            single_mask,
+            axis_order=axis_order,
+            flip_x=flip_x,
+            flip_z=flip_z,
+            velocity_component=None,
+        )
+
+        # == logical OR
+        combined_mask = np.maximum(combined_mask, single_mask)
+
+    return combined_mask
+
+
 def process_single_cache_sequence(
     cache_data_dir: Path,
     output_dir: Path,
@@ -179,11 +211,9 @@ def process_single_cache_sequence(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Initialize stats collection
     sequence_stats_list: list[SequenceStats] = []
     percentiles_to_use = percentiles if percentiles is not None else [75, 90, 95, 99, 100]
 
-    # Process files
     successful = 0
     total_nonzero_files = 0
 
@@ -191,15 +221,21 @@ def process_single_cache_sequence(
     velx_frames = []
     velz_frames = []
     emitter_frames = []
+    collider_frames = []
     hw_ref = None
     assert abc_metadata
 
-    # Validate emitter mesh
-    emitter_mesh = validate_emitter_mesh(abc_metadata)
-    print(f"Validated emitter mesh: '{emitter_mesh.name}' ({emitter_mesh.geometry_type})")
+    emitter_meshes = validate_emitter_meshes(abc_metadata)
+    print(
+        f"Validated {len(emitter_meshes)} emitter mesh(es): {', '.join([f'{m.name} ({m.geometry_type})' for m in emitter_meshes])}"
+    )
+
+    collider_meshes = validate_collider_meshes(abc_metadata)
+    print(
+        f"Validated {len(collider_meshes)} collider mesh(es): {', '.join([f'{m.name} ({m.geometry_type})' for m in collider_meshes])}"
+    )
 
     for frame_idx, vdb_file in enumerate(vdb_files):
-        # Print mesh metadata for this frame
         if abc_metadata and abc_metadata.meshes:
             # Frame number is 1-indexed in Alembic, frame_idx is 0-indexed in VDB processing
             abc_frame_idx = frame_idx  # Alembic frames start at frame_start
@@ -222,20 +258,22 @@ def process_single_cache_sequence(
         )
         assert frame_data
 
-        # Process emitter mesh for this frame
-        transform = emitter_mesh.transforms_per_frame[frame_idx]
-        emitter_mask = project_mesh_to_grid(
-            transform=transform,
-            geometry_type=emitter_mesh.geometry_type,
-            grid_resolution=target_resolution,
-        )
-
-        emitter_mask = apply_spatial_transforms(
-            emitter_mask,
+        emitter_mask = process_mesh_masks_for_frame(
+            mesh_list=emitter_meshes,
+            frame_idx=frame_idx,
+            target_resolution=target_resolution,
             axis_order=AXIS_ORDER,
             flip_x=FLIP_X,
             flip_z=FLIP_Z,
-            velocity_component=None,
+        )
+
+        collider_mask = process_mesh_masks_for_frame(
+            mesh_list=collider_meshes,
+            frame_idx=frame_idx,
+            target_resolution=target_resolution,
+            axis_order=AXIS_ORDER,
+            flip_x=FLIP_X,
+            flip_z=FLIP_Z,
         )
 
         if frame_data:
@@ -248,26 +286,32 @@ def process_single_cache_sequence(
 
                 if hw_ref is None:
                     hw_ref = d.shape
-                if d.shape != hw_ref or vx.shape != hw_ref or vz.shape != hw_ref or emitter_mask.shape != hw_ref:
+                if (
+                    d.shape != hw_ref
+                    or vx.shape != hw_ref
+                    or vz.shape != hw_ref
+                    or emitter_mask.shape != hw_ref
+                    or collider_mask.shape != hw_ref
+                ):
                     print(
-                        f"    Warning: skipping frame due to shape mismatch. Expected {hw_ref}, got d={d.shape}, vx={vx.shape}, vz={vz.shape}, emitter={emitter_mask.shape}"
+                        f"    Warning: skipping frame due to shape mismatch. Expected {hw_ref}, got d={d.shape}, vx={vx.shape}, vz={vz.shape}, emitter={emitter_mask.shape}, collider={collider_mask.shape}"
                     )
                 else:
                     density_frames.append(d)
                     velx_frames.append(vx)
                     velz_frames.append(vz)
                     emitter_frames.append(emitter_mask.astype(np.float32, copy=False))
+                    collider_frames.append(collider_mask.astype(np.float32, copy=False))
 
                 # Check if we got actual data
                 has_nonzero_data = np.any(d != 0) or np.any(vx != 0) or np.any(vz != 0)
                 if has_nonzero_data:
                     total_nonzero_files += 1
             else:
-                print(
-                    "    Warning: missing one of required grids (density/velocity); frame will not be included in sequences."
+                raise AssertionError(
+                    "Missing one of required grids (density/velocity); frame cannot be included in sequences."
                 )
 
-    # Report per-frame processing
     print("\n=== Per-frame extraction complete ===")
     print(f"Successfully processed: {successful}/{len(vdb_files)} files")
     print(f"Frames with non-zero data (accepted): {total_nonzero_files}")
@@ -291,6 +335,7 @@ def process_single_cache_sequence(
         x_stack = np.stack(velx_frames[start:end], axis=0).astype(np.float32, copy=False)
         z_stack = np.stack(velz_frames[start:end], axis=0).astype(np.float32, copy=False)
         e_stack = np.stack(emitter_frames[start:end], axis=0).astype(np.float32, copy=False)
+        c_stack = np.stack(collider_frames[start:end], axis=0).astype(np.float32, copy=False)
 
         # Use global sequence numbering
         global_seq_num = starting_seq_number + s
@@ -302,8 +347,9 @@ def process_single_cache_sequence(
             velx=x_stack,
             velz=z_stack,
             emitter=e_stack,
+            collider=c_stack,
         )
-        print(f"Saved {out_path}  shape: T={T}, H={H}, W={W} (density, velx, velz, emitter)")
+        print(f"Saved {out_path}  shape: T={T}, H={H}, W={W} (density, velx, velz, emitter, collider)")
 
         # Compute statistics for this sequence
         try:
@@ -360,14 +406,11 @@ def process_all_cache_sequences(
         print(f"Processing cache: {cache_name}")
         print(f"{'=' * 60}")
 
-        # Extract Alembic metadata for this sequence
         abc_path = find_abc_for_cache(cache_data_dir, blender_caches_root)
         abc_metadata = extract_abc_metadata(abc_path, cache_name)
 
-        # Store mesh metadata for YAML
         all_mesh_metadata[cache_name] = abc_metadata.to_dict()
 
-        # Process this cache's VDB files (mesh metadata will be printed per frame)
         sequences_from_cache, cache_stats = process_single_cache_sequence(
             cache_data_dir=cache_data_dir,
             output_dir=output_dir,

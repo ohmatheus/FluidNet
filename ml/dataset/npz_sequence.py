@@ -15,7 +15,7 @@ def _calculate_fake_count(num_real_sequences: int, fake_empty_pct: int) -> int:
 
 
 def _validate_sequence_data(
-    path: Path, d: np.ndarray, vx: np.ndarray, vz: np.ndarray, emitter: np.ndarray | None
+    path: Path, d: np.ndarray, vx: np.ndarray, vz: np.ndarray, emitter: np.ndarray | None, collider: np.ndarray | None
 ) -> None:
     if d.ndim != 3 or vx.ndim != 3 or vz.ndim != 3:
         raise ValueError(f"Expected (T,H,W) arrays in {path}")
@@ -27,6 +27,12 @@ def _validate_sequence_data(
             raise ValueError(f"Expected emitter to be (T,H,W) in {path}, got {emitter.shape}")
         if emitter.shape != d.shape:
             raise ValueError(f"Emitter shape mismatch in {path}: emitter={emitter.shape}, density={d.shape}")
+
+    if collider is not None:
+        if collider.ndim != 3:
+            raise ValueError(f"Expected collider to be (T,H,W) in {path}, got {collider.shape}")
+        if collider.shape != d.shape:
+            raise ValueError(f"Collider shape mismatch in {path}: collider={collider.shape}, density={d.shape}")
 
     T = d.shape[0]
     if T < 3:
@@ -41,8 +47,9 @@ def _load_sequence_metadata(path: Path) -> tuple[int, int, int]:
         vx = data["velx"]
         vz = data["velz"]
         emitter = data["emitter"] if "emitter" in data else None
+        collider = data["collider"] if "collider" in data else None
 
-        _validate_sequence_data(path, d, vx, vz, emitter)
+        _validate_sequence_data(path, d, vx, vz, emitter, collider)
 
         T, H, W = d.shape
         return T, H, W
@@ -118,6 +125,14 @@ def _create_fake_sample(
     vz = np.zeros((T, H, W), dtype=np.float32)
     emitter = np.zeros((T, H, W), dtype=np.float32)
 
+    # ---------------------------
+    # Randomly choose between zeros and ones to avoid collider/density bias (per-sequence randomization)
+    collider_value = np.random.choice([0.0, 1.0])
+    collider = np.full((T, H, W), collider_value, dtype=np.float32)
+
+    # collider = np.ones((T, H, W), dtype=np.float32)
+    # ---------------------------
+
     # Extract time slices
     d_tminus = d[t - 1]
     d_t = d[t]
@@ -130,8 +145,9 @@ def _create_fake_sample(
     vz_tp1 = vz[t + 1]
 
     emitter_t = emitter[t]
+    collider_t = collider[t]
 
-    x = np.stack([d_t, vx_t, vz_t, d_tminus, emitter_t], axis=0)  # (5,H,W)
+    x = np.stack([d_t, vx_t, vz_t, d_tminus, emitter_t, collider_t], axis=0)  # (6,H,W)
     y = np.stack([d_tp1, vx_tp1, vz_tp1], axis=0)  # (3,H,W)
 
     return torch.from_numpy(x), torch.from_numpy(y)
@@ -146,11 +162,15 @@ def _load_sample(
         vx = data["velx"].astype(np.float32, copy=False)
         vz = data["velz"].astype(np.float32, copy=False)
 
-        # Load emitter field if available, fallback to zeros
         if "emitter" in data:
             emitter = data["emitter"].astype(np.float32, copy=False)
         else:
             emitter = np.zeros_like(d)
+
+        if "collider" in data:
+            collider = data["collider"].astype(np.float32, copy=False)
+        else:
+            collider = np.zeros_like(d)
 
         # Extract time slices
         d_tminus = d[t - 1]
@@ -164,6 +184,7 @@ def _load_sample(
         vz_tp1 = vz[t + 1]
 
         emitter_t = emitter[t]
+        collider_t = collider[t]
 
         # Apply normalization if enabled
         if normalize and norm_scales is not None:
@@ -171,7 +192,7 @@ def _load_sample(
                 d_t, d_tminus, d_tp1, vx_t, vx_tp1, vz_t, vz_tp1, norm_scales
             )
 
-        x = np.stack([d_t, vx_t, vz_t, d_tminus, emitter_t], axis=0)  # (5,H,W)
+        x = np.stack([d_t, vx_t, vz_t, d_tminus, emitter_t, collider_t], axis=0)  # (6,H,W)
         y = np.stack([d_tp1, vx_tp1, vz_tp1], axis=0)  # (3,H,W)
 
     return torch.from_numpy(x), torch.from_numpy(y)
@@ -180,10 +201,11 @@ def _load_sample(
 class FluidNPZSequenceDataset(Dataset):
     """
     PyTorch Dataset for fluid sequences saved as seq_*.npz with arrays:
-      - density: (T, H, W)
-      - velx:    (T, H, W)
-      - velz:    (T, H, W)
-      - emitter: (T, H, W)
+      - density:    (T, H, W)
+      - velx:       (T, H, W)
+      - velz:       (T, H, W)
+      - emitter:    (T, H, W)
+      - collider:   (T, H, W)
     """
 
     def __init__(

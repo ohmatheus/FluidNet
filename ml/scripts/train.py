@@ -1,5 +1,6 @@
 import random
 from pathlib import Path
+from typing import cast
 
 import mlflow
 import numpy as np
@@ -36,12 +37,35 @@ def make_splits(
     indices = list(range(n_seq))
     random.Random(seed).shuffle(indices)
 
-    n_train = max(1, int(split_ratios[0] * n_seq))
-    n_val = max(1, int(split_ratios[1] * n_seq))
+    # reserve 1 sample per split
+    reserved_per_split = 1
+    remaining = n_seq - 3
 
-    if n_train + n_val >= n_seq:
-        n_train = n_seq - 2  # leave room for val and test in case of few seq
-        n_val = 1
+    # normalize ratios (handle edge case where sum != 1.0)
+    ratio_sum = sum(split_ratios)
+    if ratio_sum == 0:
+        normalized_ratios = (1 / 3, 1 / 3, 1 / 3)
+    else:
+        normalized_ratios = cast("tuple[float, float, float]", tuple(r / ratio_sum for r in split_ratios))
+
+    # floor
+    additional = [int(r * remaining) for r in normalized_ratios]
+
+    # distribute leftover samples
+    leftover = remaining - sum(additional)
+    if leftover > 0:
+        fractional_parts = [(r * remaining) % 1 for r in normalized_ratios]
+        sorted_indices = sorted(range(3), key=lambda i: fractional_parts[i], reverse=True)
+        for i in range(leftover):
+            additional[sorted_indices[i]] += 1
+
+    n_train = reserved_per_split + additional[0]
+    n_val = reserved_per_split + additional[1]
+    n_test = reserved_per_split + additional[2]
+
+    assert n_train + n_val + n_test == n_seq, (
+        f"Split sizes don't sum to n_seq: {n_train} + {n_val} + {n_test} != {n_seq}"
+    )
 
     train_idx = indices[:n_train]
     val_idx = indices[n_train : n_train + n_val]

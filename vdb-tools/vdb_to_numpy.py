@@ -1,4 +1,5 @@
 import argparse
+import shutil
 
 from vdb_core.batch_processing import process_all_cache_sequences
 
@@ -35,6 +36,10 @@ def main() -> None:
     print(f"Blender caches root: {blender_caches_root}")
     print(f"Output directory: {output_dir}")
     print(f"Target resolution: {resolution}x{resolution}")
+
+    if output_dir.exists():
+        print(f"Clearing output directory: {output_dir}")
+        shutil.rmtree(output_dir)
 
     process_all_cache_sequences(
         blender_caches_root=blender_caches_root,

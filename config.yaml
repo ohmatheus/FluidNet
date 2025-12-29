@@ -13,7 +13,7 @@ models:
 simulation:
   fps: 15.0
   grid_resolution: 128
-  input_channels: 5      #[density, velx, vely, density-1, emitter_mask]
+  input_channels: 6      #[density, velx, vely, density-1, emitter_mask, collider_mask]
 
 engine:
   window_width: 1050

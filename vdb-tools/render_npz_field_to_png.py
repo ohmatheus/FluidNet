@@ -7,7 +7,7 @@ from PIL import Image
 from config import _PROJECT_ROOT, project_config
 
 # Available fields that can be rendered from NPZ files
-AVAILABLE_FIELDS = ["density", "velx", "velz", "vel_magnitude", "emitter"]
+AVAILABLE_FIELDS = ["density", "velx", "velz", "vel_magnitude", "emitter", "collider"]
 
 INPUT_NPZ = _PROJECT_ROOT / project_config.vdb_tools.npz_output_directory / "seq_0001.npz"
 OUTPUT_DIR = _PROJECT_ROOT / "data/npz_image_debug/"
@@ -46,6 +46,7 @@ def render_npz_field(
         if field == "density":
             field_data = data["density"]  # (T,H,W)
             emitter_data = data["emitter"]  # (T,H,W) - always load emitter for density overlay
+            collider_data = data.get("collider", None)  # (T,H,W) or None - load collider if available
         elif field == "velx":
             field_data = data["velx"]  # (T,H,W)
         elif field == "velz":
@@ -57,6 +58,8 @@ def render_npz_field(
             field_data = np.sqrt(velx**2 + velz**2)  # (T,H,W)
         elif field == "emitter":
             field_data = data["emitter"]  # (T,H,W)
+        elif field == "collider":
+            field_data = data["collider"]  # (T,H,W)
         else:
             raise ValueError(f"Unknown field: {field}")
 
@@ -87,18 +90,24 @@ def render_npz_field(
             fname = f"frame_{t:04d}.png"
             fpath = seq_field_dir / fname
 
-            # Create RGB image: grayscale density + green emitter overlay
+            # Create RGB image: grayscale density + overlays
             # Start with grayscale density (R=G=B)
             rgb = np.stack([density_norm[t], density_norm[t], density_norm[t]], axis=-1)  # (H,W,3)
 
-            # Overlay emitter in pure green (R=0, G=255, B=0)
-            # Ensure emitter is truly binary (0 or 1)
-            emitter_mask = emitter_data[t] > 0.5  # Binary mask
-            rgb[emitter_mask, 0] = 0  # Red channel = 0
-            rgb[emitter_mask, 1] = 255  # Green channel = 255
-            rgb[emitter_mask, 2] = 0  # Blue channel = 0
+            # Overlay emitter in green
+            emitter_mask = emitter_data[t] > 0.5  # Binary mask - useless
+            rgb[emitter_mask, 0] = 0
+            rgb[emitter_mask, 1] = 255
+            rgb[emitter_mask, 2] = 0
 
-            # Scale image if needed
+            # Overlay collider in red
+            if collider_data is not None:
+                collider_mask = collider_data[t] > 0.5  # Binary mask - useless
+                rgb[collider_mask, 0] = 255
+                rgb[collider_mask, 1] = 0
+                rgb[collider_mask, 2] = 0
+
+            # Scale image
             if scale and scale != 1:
                 try:
                     resample = Image.Resampling.NEAREST
@@ -136,7 +145,6 @@ def render_npz_field(
                 img = img.resize((w * scale, h * scale), resample=resample)
                 img.save(fpath)
             else:
-                # Per-frame fallback conversion
                 _save_png(field_data[t], str(fpath))
 
     return T

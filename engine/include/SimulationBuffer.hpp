@@ -11,7 +11,10 @@ struct SimulationBuffer
     std::vector<float> density;
     std::vector<float> velocityX;
     std::vector<float> velocityY;
+
+    // todo: move those 2 as user input - not part of the simulation rollout, but scene.
     std::vector<float> emitterMask;
+    std::vector<float> colliderMask;
 
     int gridResolution{128};
     uint64_t frameNumber{0};

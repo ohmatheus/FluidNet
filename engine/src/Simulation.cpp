@@ -33,6 +33,38 @@ void setupEmitterMask(std::vector<float>& emitterMask, int gridRes)
         }
     }
 }
+
+void setupColliderMask(std::vector<float>& colliderMask, int gridRes)
+{
+    const size_t planeSize = static_cast<size_t>(gridRes) * static_cast<size_t>(gridRes);
+    std::fill(colliderMask.begin(), colliderMask.end(), 0.0f);
+
+    const int colliderWidth = 40;
+    const int colliderHeight = 8;
+    const int centerX = gridRes / 2;
+    const int centerY = gridRes / 2 + 20;
+
+    const int xStart = centerX - colliderWidth / 2;
+    const int xEnd = centerX + colliderWidth / 2;
+    const int yStart = centerY - colliderHeight / 2;
+    const int yEnd = centerY + colliderHeight / 2;
+
+    for (int y = yStart; y < yEnd; ++y)
+    {
+        if (y < 0 || y >= gridRes)
+            continue;
+
+        for (int x = xStart; x < xEnd; ++x)
+        {
+            if (x < 0 || x >= gridRes)
+                continue;
+
+            const size_t idx =
+                static_cast<size_t>(y) * static_cast<size_t>(gridRes) + static_cast<size_t>(x);
+            colliderMask[idx] = 1.0f;
+        }
+    }
+}
 } // namespace
 
 namespace FluidNet
@@ -247,6 +279,7 @@ void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer*
         // -> don't add emiter mask in buffer, have another emitter_mask buffer directly injected to
         // simulation input
         setupEmitterMask(frontBuf->emitterMask, gridRes);
+        setupColliderMask(frontBuf->colliderMask, gridRes);
 
         const int64_t inputShape[] = {1, inputChannels, gridRes, gridRes};
         const size_t inputSize = inputChannels * planeSize;
@@ -260,6 +293,8 @@ void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer*
                     planeSize * sizeof(float));
         std::memcpy(&inputData[3 * planeSize], backBuf->density.data(), planeSize * sizeof(float));
         std::memcpy(&inputData[4 * planeSize], frontBuf->emitterMask.data(),
+                    planeSize * sizeof(float));
+        std::memcpy(&inputData[5 * planeSize], frontBuf->colliderMask.data(),
                     planeSize * sizeof(float));
 
         auto memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
