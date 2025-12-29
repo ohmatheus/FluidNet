@@ -3,26 +3,38 @@ import numpy as np
 from vdb_core.abc_metadata import AlembicMetadata, MeshMetadata, MeshTransform
 
 
-def validate_emitter_mesh(abc_metadata: AlembicMetadata) -> MeshMetadata:
-    emitters = [m for m in abc_metadata.meshes if m.name == "Emitter"]
+def validate_emitter_meshes(abc_metadata: AlembicMetadata) -> list[MeshMetadata]:
+    emitters = [m for m in abc_metadata.meshes if "Emitter" in m.name]
 
     if len(emitters) == 0:
         available_meshes = [m.name for m in abc_metadata.meshes]
-        raise ValueError(f"No mesh named 'Emitter' found in Alembic metadata. Available meshes: {available_meshes}")
+        raise ValueError(f"No mesh containing 'Emitter' in name found in Alembic metadata. Available meshes: {available_meshes}")
 
-    if len(emitters) > 1:
-        raise ValueError(
-            f"Multiple meshes named 'Emitter' found ({len(emitters)}). Only one emitter mesh is supported."
-        )
+    # Validate geometry type for each emitter
+    for emitter in emitters:
+        if emitter.geometry_type not in ["Cube", "Sphere"]:
+            raise ValueError(
+                f"Emitter '{emitter.name}' has unsupported geometry type '{emitter.geometry_type}'. Only 'Cube' and 'Sphere' are supported."
+            )
 
-    emitter = emitters[0]
+    return emitters
 
-    if emitter.geometry_type not in ["Cube", "Sphere"]:
-        raise ValueError(
-            f"Emitter geometry type '{emitter.geometry_type}' not supported. Only 'Cube' and 'Sphere' are supported."
-        )
 
-    return emitter
+def validate_collider_meshes(abc_metadata: AlembicMetadata) -> list[MeshMetadata]:
+    colliders = [m for m in abc_metadata.meshes if "Collider" in m.name]
+
+    if len(colliders) == 0:
+        available_meshes = [m.name for m in abc_metadata.meshes]
+        raise ValueError(f"No mesh containing 'Collider' in name found in Alembic metadata. Available meshes: {available_meshes}")
+
+    # Validate geometry type for each collider
+    for collider in colliders:
+        if collider.geometry_type not in ["Cube", "Sphere"]:
+            raise ValueError(
+                f"Collider '{collider.name}' has unsupported geometry type '{collider.geometry_type}'. Only 'Cube' and 'Sphere' are supported."
+            )
+
+    return colliders
 
 
 def project_mesh_to_grid(
