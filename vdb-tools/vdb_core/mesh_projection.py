@@ -12,7 +12,6 @@ def validate_emitter_meshes(abc_metadata: AlembicMetadata) -> list[MeshMetadata]
             f"No mesh containing 'Emitter' in name found in Alembic metadata. Available meshes: {available_meshes}"
         )
 
-    # Validate geometry type for each emitter
     for emitter in emitters:
         if emitter.geometry_type not in ["Cube", "Sphere"]:
             raise ValueError(
@@ -31,7 +30,6 @@ def validate_collider_meshes(abc_metadata: AlembicMetadata) -> list[MeshMetadata
             f"No mesh containing 'Collider' in name found in Alembic metadata. Available meshes: {available_meshes}"
         )
 
-    # Validate geometry type for each collider
     for collider in colliders:
         if collider.geometry_type not in ["Cube", "Sphere"]:
             raise ValueError(
