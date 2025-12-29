@@ -6,8 +6,8 @@ import openvdb  # type: ignore[import-not-found]
 
 from config import PROJECT_ROOT_PATH
 from vdb_core.abc_metadata import AlembicMetadata, extract_abc_metadata, find_abc_for_cache
-from vdb_core.mesh_projection import project_mesh_to_grid, validate_collider_meshes, validate_emitter_meshes
 from vdb_core.grid_extraction import extract_density_field_avg, extract_velocity_components_avg
+from vdb_core.mesh_projection import project_mesh_to_grid, validate_collider_meshes, validate_emitter_meshes
 from vdb_core.statistics import (
     SequenceStats,
     aggregate_global_stats,
@@ -226,10 +226,14 @@ def process_single_cache_sequence(
     assert abc_metadata
 
     emitter_meshes = validate_emitter_meshes(abc_metadata)
-    print(f"Validated {len(emitter_meshes)} emitter mesh(es): {', '.join([f'{m.name} ({m.geometry_type})' for m in emitter_meshes])}")
+    print(
+        f"Validated {len(emitter_meshes)} emitter mesh(es): {', '.join([f'{m.name} ({m.geometry_type})' for m in emitter_meshes])}"
+    )
 
     collider_meshes = validate_collider_meshes(abc_metadata)
-    print(f"Validated {len(collider_meshes)} collider mesh(es): {', '.join([f'{m.name} ({m.geometry_type})' for m in collider_meshes])}")
+    print(
+        f"Validated {len(collider_meshes)} collider mesh(es): {', '.join([f'{m.name} ({m.geometry_type})' for m in collider_meshes])}"
+    )
 
     for frame_idx, vdb_file in enumerate(vdb_files):
         if abc_metadata and abc_metadata.meshes:
@@ -282,7 +286,13 @@ def process_single_cache_sequence(
 
                 if hw_ref is None:
                     hw_ref = d.shape
-                if d.shape != hw_ref or vx.shape != hw_ref or vz.shape != hw_ref or emitter_mask.shape != hw_ref or collider_mask.shape != hw_ref:
+                if (
+                    d.shape != hw_ref
+                    or vx.shape != hw_ref
+                    or vz.shape != hw_ref
+                    or emitter_mask.shape != hw_ref
+                    or collider_mask.shape != hw_ref
+                ):
                     print(
                         f"    Warning: skipping frame due to shape mismatch. Expected {hw_ref}, got d={d.shape}, vx={vx.shape}, vz={vz.shape}, emitter={emitter_mask.shape}, collider={collider_mask.shape}"
                     )
@@ -298,10 +308,9 @@ def process_single_cache_sequence(
                 if has_nonzero_data:
                     total_nonzero_files += 1
             else:
-                print(
-                    "    Warning: missing one of required grids (density/velocity); frame will not be included in sequences."
+                raise AssertionError(
+                    "Missing one of required grids (density/velocity); frame cannot be included in sequences."
                 )
-                assert(False)
 
     print("\n=== Per-frame extraction complete ===")
     print(f"Successfully processed: {successful}/{len(vdb_files)} files")

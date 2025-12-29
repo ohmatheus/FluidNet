@@ -24,6 +24,7 @@ def render_density_to_png(
     output_dir: Path,
     scale: int = 4,
     use_global_norm: bool = False,
+    collider_mask: np.ndarray | None = None,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -42,7 +43,11 @@ def render_density_to_png(
 
         # Save each frame
         for i, frame in enumerate(norm_all):
-            img = Image.fromarray(frame, mode="L")
+            img = Image.fromarray(frame, mode="L").convert("RGB")
+            if collider_mask is not None:
+                pixels = np.array(img)
+                pixels[collider_mask > 0] = [255, 0, 0]
+                img = Image.fromarray(pixels)
             if scale > 1:
                 w, h = img.size
                 img = img.resize((w * scale, h * scale), resample=Image.Resampling.BILINEAR)
@@ -56,7 +61,11 @@ def render_density_to_png(
         for i, density in enumerate(density_fields):
             norm = np.clip(np.round(density * 255.0), 0, 255).astype(np.uint8)
 
-            img = Image.fromarray(norm, mode="L")
+            img = Image.fromarray(norm, mode="L").convert("RGB")
+            if collider_mask is not None:
+                pixels = np.array(img)
+                pixels[collider_mask > 0] = [255, 0, 0]
+                img = Image.fromarray(pixels)
             if scale > 1:
                 w, h = img.size
                 img = img.resize((w * scale, h * scale), resample=Image.Resampling.BILINEAR)
@@ -167,8 +176,23 @@ def main() -> None:
     emitter_mask = np.zeros((args.resolution, args.resolution), dtype=np.float32)
     emitter_mask[circle_mask] = 1.0
 
+    # Create rectangular collider mask at middle top
+    collider_width = 40  # Rectangle width
+    collider_height = 8  # Rectangle height
+    collider_center_x = args.resolution // 2
+    collider_center_y = args.resolution // 2 + 20  # Near top (opposite of emitter)
+
+    # Create rectangular mask (1 inside rectangle, 0 outside)
+    collider_mask = np.zeros((args.resolution, args.resolution), dtype=np.float32)
+    x_start = max(0, collider_center_x - collider_width // 2)
+    x_end = min(args.resolution, collider_center_x + collider_width // 2)
+    y_start = max(0, collider_center_y - collider_height // 2)
+    y_end = min(args.resolution, collider_center_y + collider_height // 2)
+    collider_mask[y_start:y_end, x_start:x_end] = 1.0
+
     print(f"\nStarting autoregressive rollout for {args.num_frames} frames...")
     print("Emitter mask: binary circle (1 inside, 0 outside) - static for all frames")
+    print("Collider mask: binary rectangle (1 inside, 0 outside) - static for all frames")
 
     density_frames = []
 
@@ -181,15 +205,17 @@ def main() -> None:
     # Autoregressive rollout
     for frame_idx in range(args.num_frames):
         emitter_channel = emitter_mask[np.newaxis, ...]  # Shape: (1, H, W)
+        collider_channel = collider_mask[np.newaxis, ...]  # Shape: (1, H, W)
 
         model_input = np.concatenate(
             [
                 state_current,  # [density_t, velx_t, vely_t]
                 state_prev[0:1],  # [density_{t-1}]
                 emitter_channel,  # [emitter_mask]
+                collider_channel,  # [collider_mask]
             ],
             axis=0,
-        )  # Shape: (5, H, W)
+        )  # Shape: (6, H, W)
 
         # Log input statistics (first 3 channels: density, velx, vely)
         log_channel_stats(frame_idx, model_input[:3], "INPUT", log_file)
@@ -225,6 +251,7 @@ def main() -> None:
         output_dir,
         scale=args.upscale_factor,
         use_global_norm=USE_GLOBAL_NORM,
+        collider_mask=collider_mask,
     )
 
     print(f"\nDone! Output saved to: {output_dir.resolve()}")

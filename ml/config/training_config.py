@@ -9,7 +9,7 @@ class TrainingConfig(BaseModel):
     # Basic training settings
     batch_size: int = 4
     learning_rate: float = 0.001
-    epochs: int = 10
+    epochs: int = 15
     device: str | None = "cuda"
     amp_enabled: bool = True
     num_workers: int = 4
@@ -17,7 +17,7 @@ class TrainingConfig(BaseModel):
     # Dataset settings
     npz_dir: Path = Path(PROJECT_ROOT_PATH / project_config.vdb_tools.npz_output_directory)
     normalize: bool = True
-    split_ratios: tuple[float, float, float] = (0.7, 0.15, 0.15)  # train, val, test - to change
+    split_ratios: tuple[float, float, float] = (0.6, 0.3, 0.1)  # train, val, test - to change
     split_seed: int = 42
 
     # Model architecture

@@ -8,7 +8,9 @@ def validate_emitter_meshes(abc_metadata: AlembicMetadata) -> list[MeshMetadata]
 
     if len(emitters) == 0:
         available_meshes = [m.name for m in abc_metadata.meshes]
-        raise ValueError(f"No mesh containing 'Emitter' in name found in Alembic metadata. Available meshes: {available_meshes}")
+        raise ValueError(
+            f"No mesh containing 'Emitter' in name found in Alembic metadata. Available meshes: {available_meshes}"
+        )
 
     # Validate geometry type for each emitter
     for emitter in emitters:
@@ -25,7 +27,9 @@ def validate_collider_meshes(abc_metadata: AlembicMetadata) -> list[MeshMetadata
 
     if len(colliders) == 0:
         available_meshes = [m.name for m in abc_metadata.meshes]
-        raise ValueError(f"No mesh containing 'Collider' in name found in Alembic metadata. Available meshes: {available_meshes}")
+        raise ValueError(
+            f"No mesh containing 'Collider' in name found in Alembic metadata. Available meshes: {available_meshes}"
+        )
 
     # Validate geometry type for each collider
     for collider in colliders:
