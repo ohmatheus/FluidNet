@@ -133,7 +133,7 @@ def main() -> None:
 
     if args.backend == "pytorch":
         backend: InferenceBackend = PyTorchBackend()
-        model_path = PROJECT_ROOT_PATH / f"data/checkpoints/{args.model_name}/final_model.pth"
+        model_path = PROJECT_ROOT_PATH / f"data/checkpoints/{args.model_name}/best_model.pth"
     else:  # onnx
         backend = ONNXBackend()
         model_path = PROJECT_ROOT_PATH / f"data/onnx/{args.model_name}.onnx"

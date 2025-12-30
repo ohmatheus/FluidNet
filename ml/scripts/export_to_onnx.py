@@ -6,7 +6,7 @@ import torch.nn as nn
 from config.config import PROJECT_ROOT_PATH, project_config
 from models.small_unet import SmallUNet
 
-CHECKPOINT_FILENAME = "final_model.pth"
+CHECKPOINT_FILENAME = "best_model.pth"
 RESOLUTION = project_config.simulation.grid_resolution
 INPUT_CHANNELS = project_config.simulation.input_channels
 BATCH_SIZE = 1
