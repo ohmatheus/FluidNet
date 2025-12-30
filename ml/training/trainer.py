@@ -16,6 +16,14 @@ from tqdm import tqdm
 
 from config.training_config import TrainingConfig
 from training.early_stopping import EarlyStopping
+from training.metrics import (
+    MetricsTracker,
+    compute_collider_violation,
+    compute_divergence_norm,
+    compute_emitter_density_accuracy,
+    compute_kinetic_energy,
+    compute_per_channel_mse,
+)
 from training.physics_loss import PhysicsAwareLoss
 
 
@@ -66,6 +74,13 @@ class Trainer:
             "val_total": [],
             "val_mse": [],
             "learning_rate": [],
+            "val_mse_density": [],
+            "val_mse_velx": [],
+            "val_mse_vely": [],
+            "val_divergence_norm": [],
+            "val_kinetic_energy": [],
+            "val_collider_violation": [],
+            "val_emitter_accuracy": [],
         }
 
         if self.config.physics_loss.enable_divergence:
@@ -146,6 +161,7 @@ class Trainer:
     def validate(self) -> dict[str, float]:
         self.model.eval()
         loss_accumulators = {}
+        metrics_tracker = MetricsTracker()
         num_batches = 0
 
         with torch.no_grad():
@@ -166,11 +182,44 @@ class Trainer:
                         loss_accumulators[key] = 0.0
                     loss_accumulators[key] += value
 
+                density_pred = outputs[:, 0, :, :]
+                velx_pred = outputs[:, 1, :, :]
+                vely_pred = outputs[:, 2, :, :]
+
+                emitter_mask = inputs[:, 4, :, :]
+                collider_mask = inputs[:, 5, :, :]
+
+                batch_metrics = {}
+
+                batch_metrics.update(compute_per_channel_mse(outputs, targets))
+
+                batch_metrics["divergence_norm"] = compute_divergence_norm(
+                    velx_pred,
+                    vely_pred,
+                    dx=self.config.physics_loss.grid_spacing,
+                    dy=self.config.physics_loss.grid_spacing,
+                )
+
+                batch_metrics["kinetic_energy"] = compute_kinetic_energy(velx_pred, vely_pred)
+
+                batch_metrics["collider_violation"] = compute_collider_violation(density_pred, collider_mask)
+
+                batch_metrics["emitter_density_accuracy"] = compute_emitter_density_accuracy(
+                    density_pred, emitter_mask, expected_injection=0.8
+                )
+
+                metrics_tracker.update(batch_metrics)
+
                 pbar.set_postfix({"loss": f"{loss.item():.6f}"})
 
         # Average all losses
         avg_losses = {key: value / num_batches for key, value in loss_accumulators.items()}
-        return avg_losses
+
+        # Average all metrics
+        avg_metrics = metrics_tracker.compute_averages()
+
+        # Merge and return
+        return {**avg_losses, **avg_metrics}
 
     def plot_training_history(self) -> Figure:
         num_epochs = len(self.history["train_total"])
@@ -237,6 +286,72 @@ class Trainer:
 
         return fig
 
+    def plot_metrics_grid(self) -> Figure:
+        """Create comprehensive metrics grid plot."""
+        num_epochs = len(self.history["val_total"])
+        if num_epochs == 0:
+            raise ValueError("No history to plot")
+
+        epochs = list(range(1, num_epochs + 1))
+
+        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+        axes = axes.flatten()
+
+        axes[0].plot(epochs, self.history["val_mse_density"], label="Density", linewidth=2)
+        axes[0].plot(epochs, self.history["val_mse_velx"], label="Vel-X", linewidth=2)
+        axes[0].plot(epochs, self.history["val_mse_vely"], label="Vel-Y", linewidth=2)
+        axes[0].set_title("Per-Channel MSE")
+        axes[0].set_xlabel("Epoch")
+        axes[0].set_ylabel("MSE")
+        axes[0].legend()
+        axes[0].grid(True, alpha=0.3)
+
+        axes[1].plot(epochs, self.history["val_divergence_norm"], color="red", linewidth=2)
+        axes[1].axhline(y=0.1, color="green", linestyle="--", label="Target < 0.1")
+        axes[1].set_title("Divergence Norm")
+        axes[1].set_xlabel("Epoch")
+        axes[1].set_ylabel("||∇·v||₂")
+        axes[1].legend()
+        axes[1].grid(True, alpha=0.3)
+
+        axes[2].plot(epochs, self.history["val_kinetic_energy"], color="blue", linewidth=2)
+        axes[2].set_title("Kinetic Energy")
+        axes[2].set_xlabel("Epoch")
+        axes[2].set_ylabel("KE (trend monitor)")
+        axes[2].grid(True, alpha=0.3)
+
+        axes[3].plot(epochs, self.history["val_collider_violation"], color="orange", linewidth=2)
+        axes[3].axhline(y=0.01, color="green", linestyle="--", label="Target < 0.01")
+        axes[3].set_title("Collider Violation")
+        axes[3].set_xlabel("Epoch")
+        axes[3].set_ylabel("Density in collider")
+        axes[3].legend()
+        axes[3].grid(True, alpha=0.3)
+
+        axes[4].plot(epochs, self.history["val_emitter_accuracy"], color="purple", linewidth=2)
+        axes[4].axhline(y=0.1, color="green", linestyle="--", label="Target < 0.1")
+        axes[4].set_title("Emitter Density Accuracy")
+        axes[4].set_xlabel("Epoch")
+        axes[4].set_ylabel("Injection error")
+        axes[4].legend()
+        axes[4].grid(True, alpha=0.3)
+
+        axes[5].plot(epochs, self.history["val_total"], color="black", linewidth=2)
+        axes[5].set_title("Total Validation Loss")
+        axes[5].set_xlabel("Epoch")
+        axes[5].set_ylabel("Loss")
+        axes[5].grid(True, alpha=0.3)
+
+        # Check if log scale needed for MSE
+        mse_range = max(self.history["val_mse_density"]) / (min(self.history["val_mse_density"]) + 1e-8)
+        if mse_range > 100:
+            axes[0].set_yscale("log")
+
+        plt.suptitle("Validation Metrics", fontsize=16, fontweight="bold")
+        plt.tight_layout()
+
+        return fig
+
     def train(self) -> None:
         print(f"Starting training for {self.config.epochs} epochs...")
 
@@ -260,6 +375,14 @@ class Trainer:
             self.history["val_total"].append(val_losses["total"])
             self.history["val_mse"].append(val_losses["mse"])
             self.history["learning_rate"].append(current_lr)
+
+            self.history["val_mse_density"].append(val_losses.get("mse_density", 0.0))
+            self.history["val_mse_velx"].append(val_losses.get("mse_velx", 0.0))
+            self.history["val_mse_vely"].append(val_losses.get("mse_vely", 0.0))
+            self.history["val_divergence_norm"].append(val_losses.get("divergence_norm", 0.0))
+            self.history["val_kinetic_energy"].append(val_losses.get("kinetic_energy", 0.0))
+            self.history["val_collider_violation"].append(val_losses.get("collider_violation", 0.0))
+            self.history["val_emitter_accuracy"].append(val_losses.get("emitter_density_accuracy", 0.0))
 
             if self.config.physics_loss.enable_divergence:
                 self.history["train_divergence"].append(train_losses["divergence"])
@@ -314,7 +437,7 @@ class Trainer:
                 tmp_path = tmp_file.name
                 fig.savefig(tmp_path, dpi=150, bbox_inches="tight")
 
-            mlflow.log_artifact(tmp_path, artifact_path="plots")
+            mlflow.log_artifact(tmp_path, artifact_path="plots/training_loss_and_lr.png")
 
             Path(tmp_path).unlink()
             plt.close(fig)
@@ -322,9 +445,28 @@ class Trainer:
             print("Training history plot saved to MLflow artifacts")
 
         except ValueError as e:
-            print(f"Warning: Could not generate plot - {e}")
+            print(f"Warning: Could not generate training history plot - {e}")
         except Exception as e:
-            print(f"Warning: Failed to generate/save plot - {e}")
+            print(f"Warning: Failed to generate/save training history plot - {e}")
+
+        try:
+            fig_metrics = self.plot_metrics_grid()
+
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False, mode="wb") as tmp_file:
+                tmp_path = tmp_file.name
+                fig_metrics.savefig(tmp_path, dpi=150, bbox_inches="tight")
+
+            mlflow.log_artifact(tmp_path, artifact_path="plots/validation_metrics_grid.png")
+
+            Path(tmp_path).unlink()
+            plt.close(fig_metrics)
+
+            print("Metrics grid plot saved to MLflow artifacts")
+
+        except ValueError as e:
+            print(f"Warning: Could not generate metrics grid plot - {e}")
+        except Exception as e:
+            print(f"Warning: Failed to generate/save metrics grid plot - {e}")
 
         print("Training complete!")
 
