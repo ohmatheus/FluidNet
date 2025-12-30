@@ -1,10 +1,13 @@
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
 
+import matplotlib.pyplot as plt
 import mlflow
 import torch
 import torch.nn as nn
+from matplotlib.figure import Figure
 from torch.amp.autocast_mode import autocast
 from torch.amp.grad_scaler import GradScaler
 from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau, StepLR
@@ -56,6 +59,22 @@ class Trainer:
 
         self.config.checkpoint_dir = self.config.checkpoint_dir / str(model.model_name)
         self.config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+        self.history: dict[str, list[float]] = {
+            "train_total": [],
+            "train_mse": [],
+            "val_total": [],
+            "val_mse": [],
+            "learning_rate": [],
+        }
+
+        if self.config.physics_loss.enable_divergence:
+            self.history["train_divergence"] = []
+            self.history["val_divergence"] = []
+
+        if self.config.physics_loss.enable_gradient:
+            self.history["train_gradient"] = []
+            self.history["val_gradient"] = []
 
     def _create_scheduler(self) -> Any:
         if self.config.lr_scheduler_type == "plateau":
@@ -153,6 +172,83 @@ class Trainer:
         avg_losses = {key: value / num_batches for key, value in loss_accumulators.items()}
         return avg_losses
 
+    def plot_training_history(self) -> Figure:
+        num_epochs = len(self.history["train_total"])
+
+        if num_epochs == 0:
+            raise ValueError("No training history to plot - training never started or was interrupted at epoch 0")
+
+        epochs = list(range(1, num_epochs + 1))
+
+        if self.early_stopping is not None and self.early_stopping.best_epoch >= 0:
+            best_epoch = self.early_stopping.best_epoch + 1
+        else:
+            min_val_idx = self.history["val_total"].index(min(self.history["val_total"]))
+            best_epoch = min_val_idx + 1
+
+        train_colors = {
+            "total": "#2E86DE",
+            "mse": "#5FA3E8",
+            "divergence": "#8BBEF2",
+            "gradient": "#B7D9F8",
+        }
+
+        val_colors = {
+            "total": "#ff7f0e",
+            "mse": "#ffab5a",
+            "divergence": "#ffc285",
+            "gradient": "#ffd4a8",
+        }
+
+        fig, ax_loss = plt.subplots(1, 1, figsize=(10, 6))
+
+        ax_loss.plot(
+            epochs,
+            self.history["train_total"],
+            color="#0066CC",
+            linewidth=2.0,
+            label="Train Total",
+            alpha=0.9,
+        )
+        ax_loss.plot(
+            epochs,
+            self.history["val_total"],
+            color="#FF5500",
+            linewidth=2.0,
+            label="Val Total",
+            alpha=0.9,
+        )
+
+        ax_loss.axvline(
+            x=best_epoch, color="red", linestyle="--", linewidth=2.0, label=f"Best Epoch ({best_epoch})", alpha=0.7
+        )
+
+        ax_loss.set_xlabel("Epoch", fontsize=12)
+        ax_loss.set_ylabel("Loss", fontsize=12, color="#333333")
+        ax_loss.set_title("Training and Validation Losses with Learning Rate", fontsize=14, fontweight="bold")
+        ax_loss.tick_params(axis="y", labelcolor="#333333")
+        ax_loss.grid(True, alpha=0.3)
+
+        loss_range = max(self.history["train_total"]) / (min(self.history["train_total"]) + 1e-8)
+        if loss_range > 100:
+            ax_loss.set_yscale("log")
+
+        ax_lr = ax_loss.twinx()
+        ax_lr.plot(epochs, self.history["learning_rate"], color="#2ca02c", linewidth=2.0, label="Learning Rate", linestyle="--")
+        ax_lr.set_ylabel("Learning Rate", fontsize=12, color="#2ca02c")
+        ax_lr.tick_params(axis="y", labelcolor="#2ca02c")
+        ax_lr.set_yscale("log")
+
+        lines1, labels1 = ax_loss.get_legend_handles_labels()
+        lines2, labels2 = ax_lr.get_legend_handles_labels()
+        ax_loss.legend(lines1 + lines2, labels1 + labels2, loc="best", fontsize=10, framealpha=0.9)
+
+        ax_loss.set_xticks(range(1, num_epochs + 1, max(1, num_epochs // 10)))
+
+        plt.tight_layout()
+
+        return fig
+
     def train(self) -> None:
         print(f"Starting training for {self.config.epochs} epochs...")
 
@@ -164,7 +260,6 @@ class Trainer:
 
             epoch_time = time.time() - epoch_start
 
-            # Log all metrics to MLflow
             train_metrics = {f"train_{k}": v for k, v in train_losses.items()}
             val_metrics = {f"val_{k}": v for k, v in val_losses.items()}
             mlflow.log_metrics({**train_metrics, **val_metrics, "epoch_time": epoch_time}, step=epoch)
@@ -172,7 +267,20 @@ class Trainer:
             current_lr = self.optimizer.param_groups[0]["lr"]
             mlflow.log_metric("learning_rate", current_lr, step=epoch)
 
-            # Print summary
+            self.history["train_total"].append(train_losses["total"])
+            self.history["train_mse"].append(train_losses["mse"])
+            self.history["val_total"].append(val_losses["total"])
+            self.history["val_mse"].append(val_losses["mse"])
+            self.history["learning_rate"].append(current_lr)
+
+            if self.config.physics_loss.enable_divergence:
+                self.history["train_divergence"].append(train_losses["divergence"])
+                self.history["val_divergence"].append(val_losses["divergence"])
+
+            if self.config.physics_loss.enable_gradient:
+                self.history["train_gradient"].append(train_losses["gradient"])
+                self.history["val_gradient"].append(val_losses["gradient"])
+
             print(
                 f"Epoch {epoch + 1}/{self.config.epochs} | "
                 f"Train Loss: {train_losses['total']:.6f} | "
@@ -180,7 +288,6 @@ class Trainer:
                 f"Time: {epoch_time:.2f}s"
             )
 
-            # Print detailed breakdown
             print(
                 f"  Train: MSE={train_losses.get('mse', 0):.6f}, "
                 f"Div={train_losses.get('divergence', 0):.6f}, "
@@ -211,6 +318,25 @@ class Trainer:
             self.early_stopping.load_best_checkpoint(self.model, self.optimizer, self.scaler, self.device)
         else:
             self.save_checkpoint(self.config.epochs - 1, final=True)
+
+        try:
+            fig = self.plot_training_history()
+
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False, mode="wb") as tmp_file:
+                tmp_path = tmp_file.name
+                fig.savefig(tmp_path, dpi=150, bbox_inches="tight")
+
+            mlflow.log_artifact(tmp_path, artifact_path="plots")
+
+            Path(tmp_path).unlink()
+            plt.close(fig)
+
+            print("Training history plot saved to MLflow artifacts")
+
+        except ValueError as e:
+            print(f"Warning: Could not generate plot - {e}")
+        except Exception as e:
+            print(f"Warning: Failed to generate/save plot - {e}")
 
         print("Training complete!")
 

@@ -27,7 +27,7 @@ class TrainingConfig(BaseModel):
 
     use_lr_scheduler: bool = True
     lr_scheduler_type: str = "plateau"
-    lr_scheduler_patience: int = 5
+    lr_scheduler_patience: int = 3
     lr_scheduler_factor: float = 0.5
     lr_scheduler_min_lr: float = 1e-6
     lr_scheduler_step_size: int = 30

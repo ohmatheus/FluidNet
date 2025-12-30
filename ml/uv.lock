@@ -895,6 +895,7 @@ name = "ml"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "matplotlib" },
     { name = "mlflow" },
     { name = "numpy" },
     { name = "onnx" },
@@ -919,6 +920,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "matplotlib", specifier = ">=3.10.8" },
     { name = "mlflow", specifier = ">=3.7.0" },
     { name = "numpy", specifier = ">=2.3.5" },
     { name = "onnx", specifier = ">=1.20.0" },
