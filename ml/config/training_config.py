@@ -5,11 +5,22 @@ from pydantic import BaseModel
 from config.config import PROJECT_ROOT_PATH, project_config
 
 
+class PhysicsLossConfig(BaseModel):
+    mse_weight: float = 1.0
+    divergence_weight: float = 0.01
+    gradient_weight: float = 0.01
+
+    grid_spacing: float = 2.0 / project_config.simulation.grid_resolution
+
+    enable_divergence: bool = True
+    enable_gradient: bool = True
+
+
 class TrainingConfig(BaseModel):
     # Basic training settings
     batch_size: int = 4
     learning_rate: float = 0.001
-    epochs: int = 15
+    epochs: int = 20
     device: str | None = "cuda"
     amp_enabled: bool = True
     num_workers: int = 4
@@ -17,7 +28,7 @@ class TrainingConfig(BaseModel):
     # Dataset settings
     npz_dir: Path = Path(PROJECT_ROOT_PATH / project_config.vdb_tools.npz_output_directory)
     normalize: bool = True
-    split_ratios: tuple[float, float, float] = (0.6, 0.3, 0.1)  # train, val, test - to change
+    split_ratios: tuple[float, float, float] = (0.8, 0.2, 0)  # train, val, test - to change
     split_seed: int = 42
 
     # Model architecture
@@ -34,3 +45,6 @@ class TrainingConfig(BaseModel):
     checkpoint_dir: Path = Path(PROJECT_ROOT_PATH / project_config.models.pytorch_folder)
     save_every_n_epochs: int = 10
     keep_last_n_checkpoints: int = 3
+
+    # Physics-aware loss configuration
+    physics_loss: PhysicsLossConfig = PhysicsLossConfig()

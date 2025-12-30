@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from config.training_config import TrainingConfig
+from training.physics_loss import PhysicsAwareLoss
 
 
 class Trainer:
@@ -27,19 +28,24 @@ class Trainer:
         self.config = config.model_copy()
         self.device = device
 
-        # Simple optimizer and loss
         self.optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
-        self.criterion = nn.MSELoss()
+        self.criterion = PhysicsAwareLoss(
+            mse_weight=config.physics_loss.mse_weight,
+            divergence_weight=config.physics_loss.divergence_weight,
+            gradient_weight=config.physics_loss.gradient_weight,
+            grid_spacing=config.physics_loss.grid_spacing,
+            enable_divergence=config.physics_loss.enable_divergence,
+            enable_gradient=config.physics_loss.enable_gradient,
+        )
 
         self.scaler = GradScaler("cuda") if config.amp_enabled and device == "cuda" else None
 
         self.config.checkpoint_dir = self.config.checkpoint_dir / str(model.model_name)
         self.config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    def train_epoch(self) -> float:
-        """Single epoch training, returns average loss"""
+    def train_epoch(self) -> dict[str, float]:
         self.model.train()
-        total_loss = 0.0
+        loss_accumulators = {}
         num_batches = 0
 
         pbar = tqdm(self.train_loader, desc="Training", leave=False)
@@ -54,7 +60,7 @@ class Trainer:
             if self.scaler is not None:
                 with autocast(device_type=self.device):
                     outputs = self.model(inputs)
-                    loss = self.criterion(outputs, targets)
+                    loss, loss_dict = self.criterion(outputs, targets, inputs)
 
                 # Backward pass with gradient scaling
                 self.scaler.scale(loss).backward()
@@ -62,21 +68,27 @@ class Trainer:
                 self.scaler.update()
             else:
                 outputs = self.model(inputs)
-                loss = self.criterion(outputs, targets)
+                loss, loss_dict = self.criterion(outputs, targets, inputs)
                 loss.backward()
                 self.optimizer.step()
 
-            total_loss += loss.item()
             num_batches += 1
+
+            # Accumulate individual loss components
+            for key, value in loss_dict.items():
+                if key not in loss_accumulators:
+                    loss_accumulators[key] = 0.0
+                loss_accumulators[key] += value
 
             pbar.set_postfix({"loss": f"{loss.item():.6f}"})
 
-        return total_loss / num_batches if num_batches > 0 else 0.0
+        # Average all losses
+        avg_losses = {key: value / num_batches for key, value in loss_accumulators.items()}
+        return avg_losses
 
-    def validate(self) -> float:
-        """Validation loop, returns average loss"""
+    def validate(self) -> dict[str, float]:
         self.model.eval()
-        total_loss = 0.0
+        loss_accumulators = {}
         num_batches = 0
 
         with torch.no_grad():
@@ -87,14 +99,21 @@ class Trainer:
                 targets = targets.to(self.device, non_blocking=True)
 
                 outputs = self.model(inputs)
-                loss = self.criterion(outputs, targets)
+                loss, loss_dict = self.criterion(outputs, targets, inputs)
 
-                total_loss += loss.item()
                 num_batches += 1
+
+                # Accumulate individual loss components
+                for key, value in loss_dict.items():
+                    if key not in loss_accumulators:
+                        loss_accumulators[key] = 0.0
+                    loss_accumulators[key] += value
 
                 pbar.set_postfix({"loss": f"{loss.item():.6f}"})
 
-        return total_loss / num_batches if num_batches > 0 else 0.0
+        # Average all losses
+        avg_losses = {key: value / num_batches for key, value in loss_accumulators.items()}
+        return avg_losses
 
     def train(self) -> None:
         print(f"Starting training for {self.config.epochs} epochs...")
@@ -102,18 +121,29 @@ class Trainer:
         for epoch in range(self.config.epochs):
             epoch_start = time.time()
 
-            train_loss = self.train_epoch()
-            val_loss = self.validate()
+            train_losses = self.train_epoch()
+            val_losses = self.validate()
 
             epoch_time = time.time() - epoch_start
 
-            mlflow.log_metrics({"train_loss": train_loss, "val_loss": val_loss, "epoch_time": epoch_time}, step=epoch)
+            # Log all metrics to MLflow
+            train_metrics = {f"train_{k}": v for k, v in train_losses.items()}
+            val_metrics = {f"val_{k}": v for k, v in val_losses.items()}
+            mlflow.log_metrics({**train_metrics, **val_metrics, "epoch_time": epoch_time}, step=epoch)
 
+            # Print summary
             print(
                 f"Epoch {epoch + 1}/{self.config.epochs} | "
-                f"Train Loss: {train_loss:.6f} | "
-                f"Val Loss: {val_loss:.6f} | "
+                f"Train Loss: {train_losses['total']:.6f} | "
+                f"Val Loss: {val_losses['total']:.6f} | "
                 f"Time: {epoch_time:.2f}s"
+            )
+
+            # Print detailed breakdown
+            print(
+                f"  Train: MSE={train_losses.get('mse', 0):.6f}, "
+                f"Div={train_losses.get('divergence', 0):.6f}, "
+                f"Grad={train_losses.get('gradient', 0):.6f}"
             )
 
             if (epoch + 1) % self.config.save_every_n_epochs == 0:
@@ -149,7 +179,6 @@ class Trainer:
             self._cleanup_old_checkpoints()
 
     def _cleanup_old_checkpoints(self) -> None:
-        """Remove old checkpoints, keeping only the last N"""
         checkpoints = sorted(
             [f for f in self.config.checkpoint_dir.glob("checkpoint_epoch_*.pth")],
             key=lambda x: x.stat().st_mtime,
@@ -162,7 +191,6 @@ class Trainer:
             print(f"Removed old checkpoint: {oldest}")
 
     def load_checkpoint(self, checkpoint_path: str | Path) -> int:
-        """Load model checkpoint, returns epoch number"""
         checkpoint_path = Path(checkpoint_path)
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
 
