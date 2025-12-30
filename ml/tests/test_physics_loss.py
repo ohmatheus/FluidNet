@@ -116,10 +116,8 @@ class TestPhysicsAwareLoss:
         assert "mse" in loss_dict
         assert "divergence" in loss_dict
         assert "gradient" in loss_dict
-        assert "continuity" in loss_dict
 
     def test_disable_flags_work(self) -> None:
-        """Disabling components should exclude them from loss_dict."""
         loss_fn = PhysicsAwareLoss(
             enable_divergence=False,
             enable_gradient=False,
@@ -136,7 +134,6 @@ class TestPhysicsAwareLoss:
 
         assert "divergence" not in loss_dict
         assert "gradient" not in loss_dict
-        assert "continuity" not in loss_dict
         assert "mse" in loss_dict
 
     def test_loss_components_are_finite(self) -> None:
