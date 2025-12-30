@@ -26,6 +26,7 @@ concurrency:
 
 jobs:
   test:
+    name: QA
     strategy:
       fail-fast: true
       matrix:
