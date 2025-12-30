@@ -186,20 +186,6 @@ class Trainer:
             min_val_idx = self.history["val_total"].index(min(self.history["val_total"]))
             best_epoch = min_val_idx + 1
 
-        train_colors = {
-            "total": "#2E86DE",
-            "mse": "#5FA3E8",
-            "divergence": "#8BBEF2",
-            "gradient": "#B7D9F8",
-        }
-
-        val_colors = {
-            "total": "#ff7f0e",
-            "mse": "#ffab5a",
-            "divergence": "#ffc285",
-            "gradient": "#ffd4a8",
-        }
-
         fig, ax_loss = plt.subplots(1, 1, figsize=(10, 6))
 
         ax_loss.plot(
@@ -234,7 +220,9 @@ class Trainer:
             ax_loss.set_yscale("log")
 
         ax_lr = ax_loss.twinx()
-        ax_lr.plot(epochs, self.history["learning_rate"], color="#2ca02c", linewidth=2.0, label="Learning Rate", linestyle="--")
+        ax_lr.plot(
+            epochs, self.history["learning_rate"], color="#2ca02c", linewidth=2.0, label="Learning Rate", linestyle="--"
+        )
         ax_lr.set_ylabel("Learning Rate", fontsize=12, color="#2ca02c")
         ax_lr.tick_params(axis="y", labelcolor="#2ca02c")
         ax_lr.set_yscale("log")

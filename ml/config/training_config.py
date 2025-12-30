@@ -17,7 +17,6 @@ class PhysicsLossConfig(BaseModel):
 
 
 class TrainingConfig(BaseModel):
-    # Basic training settings
     batch_size: int = 4
     learning_rate: float = 0.001
     epochs: int = 200
