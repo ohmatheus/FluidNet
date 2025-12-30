@@ -20,6 +20,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "mypy>=1.19.0",
+    "pytest>=8.0.0",
     "ruff>=0.14.8",
     "tox>=4.32.0",
     "types-pyyaml>=6.0.12.20250915",
@@ -35,7 +36,7 @@ onnx-export = "scripts.export_to_onnx:main"
 package = true
 
 [tool.setuptools.packages.find]
-include = ["config", "models", "dataset", "training", "inference", "utils", "scripts",  "../shared"]
+include = ["config", "models", "dataset", "training", "inference", "utils", "scripts", "tests",  "../shared"]
 exclude = [".venv*", ".tox*", "mlruns*", "__pycache__*", "*.egg-info"]
 
 [tool.ruff]
@@ -47,6 +48,7 @@ ignore = [
     "E501",     # covered by formatter / line length managed elsewhere
     "ANN401",   # allow Any in some cases
     "N806",     # ML is full of upper case names
+    "N812",     # ML import is full of upper case names
 ]
 
 [tool.mypy]
@@ -72,7 +74,7 @@ module = "numpy.*"
 ignore_missing_imports = true
 
 [tool.pyright]
-include = ["config", "models", "dataset", "training", "inference", "utils", "scripts", "../shared"]
+include = ["config", "models", "dataset", "training", "inference", "utils", "scripts", "tests","../shared"]
 extraPaths = ["."]
 pythonVersion = "3.13"
 pythonPlatform = "Linux"
