@@ -132,6 +132,10 @@ def main() -> None:
                 "split_seed": config.split_seed,
                 "amp_enabled": config.amp_enabled,
                 "device": config.device,
+                "use_lr_scheduler": config.use_lr_scheduler,
+                "lr_scheduler_type": config.lr_scheduler_type,
+                "use_early_stopping": config.use_early_stopping,
+                "early_stop_patience": config.early_stop_patience,
             }
         )
 

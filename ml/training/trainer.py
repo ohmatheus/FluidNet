@@ -1,15 +1,18 @@
 import time
 from pathlib import Path
+from typing import Any
 
 import mlflow
 import torch
 import torch.nn as nn
 from torch.amp.autocast_mode import autocast
 from torch.amp.grad_scaler import GradScaler
+from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau, StepLR
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from config.training_config import TrainingConfig
+from training.early_stopping import EarlyStopping
 from training.physics_loss import PhysicsAwareLoss
 
 
@@ -40,8 +43,43 @@ class Trainer:
 
         self.scaler = GradScaler("cuda") if config.amp_enabled and device == "cuda" else None
 
+        self.scheduler = self._create_scheduler() if config.use_lr_scheduler else None
+        self.early_stopping = (
+            EarlyStopping(
+                patience=config.early_stop_patience,
+                min_delta=config.early_stop_min_delta,
+                checkpoint_dir=self.config.checkpoint_dir / str(model.model_name),
+            )
+            if config.use_early_stopping
+            else None
+        )
+
         self.config.checkpoint_dir = self.config.checkpoint_dir / str(model.model_name)
         self.config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    def _create_scheduler(self) -> Any:
+        if self.config.lr_scheduler_type == "plateau":
+            return ReduceLROnPlateau(
+                self.optimizer,
+                mode="min",
+                factor=self.config.lr_scheduler_factor,
+                patience=self.config.lr_scheduler_patience,
+                min_lr=self.config.lr_scheduler_min_lr,
+            )
+        elif self.config.lr_scheduler_type == "cosine":
+            return CosineAnnealingLR(
+                self.optimizer,
+                T_max=self.config.lr_scheduler_t_max,
+                eta_min=self.config.lr_scheduler_min_lr,
+            )
+        elif self.config.lr_scheduler_type == "step":
+            return StepLR(
+                self.optimizer,
+                step_size=self.config.lr_scheduler_step_size,
+                gamma=self.config.lr_scheduler_factor,
+            )
+        else:
+            raise ValueError(f"Unknown scheduler type: {self.config.lr_scheduler_type}")
 
     def train_epoch(self) -> dict[str, float]:
         self.model.train()
@@ -131,6 +169,9 @@ class Trainer:
             val_metrics = {f"val_{k}": v for k, v in val_losses.items()}
             mlflow.log_metrics({**train_metrics, **val_metrics, "epoch_time": epoch_time}, step=epoch)
 
+            current_lr = self.optimizer.param_groups[0]["lr"]
+            mlflow.log_metric("learning_rate", current_lr, step=epoch)
+
             # Print summary
             print(
                 f"Epoch {epoch + 1}/{self.config.epochs} | "
@@ -146,10 +187,31 @@ class Trainer:
                 f"Grad={train_losses.get('gradient', 0):.6f}"
             )
 
+            if self.scheduler is not None:
+                if isinstance(self.scheduler, ReduceLROnPlateau):
+                    self.scheduler.step(val_losses["total"])
+                else:
+                    self.scheduler.step()
+
+            if self.early_stopping is not None:
+                should_stop = self.early_stopping(val_losses["total"], epoch)
+                if should_stop:
+                    print(f"\nEarly stopping triggered at epoch {epoch + 1}")
+                    self.early_stopping.save_checkpoint(self.model, self.optimizer, self.scaler, self.config, epoch)
+                    break
+
+                if self.early_stopping.counter == 0:
+                    self.early_stopping.save_checkpoint(self.model, self.optimizer, self.scaler, self.config, epoch)
+
             if (epoch + 1) % self.config.save_every_n_epochs == 0:
                 self.save_checkpoint(epoch)
 
-        self.save_checkpoint(self.config.epochs - 1, final=True)
+        if self.early_stopping is not None:
+            print("Restoring best checkpoint...")
+            self.early_stopping.load_best_checkpoint(self.model, self.optimizer, self.scaler, self.device)
+        else:
+            self.save_checkpoint(self.config.epochs - 1, final=True)
+
         print("Training complete!")
 
     def save_checkpoint(self, epoch: int, final: bool = False) -> None:
@@ -162,6 +224,12 @@ class Trainer:
 
         if self.scaler is not None:
             checkpoint["scaler_state_dict"] = self.scaler.state_dict()
+
+        if self.scheduler is not None:
+            checkpoint["scheduler_state_dict"] = self.scheduler.state_dict()
+
+        if self.early_stopping is not None:
+            checkpoint["early_stopping_state"] = self.early_stopping.state_dict()
 
         # Save checkpoint file
         if final:
@@ -192,13 +260,19 @@ class Trainer:
 
     def load_checkpoint(self, checkpoint_path: str | Path) -> int:
         checkpoint_path = Path(checkpoint_path)
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
 
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
         if self.scaler is not None and "scaler_state_dict" in checkpoint:
             self.scaler.load_state_dict(checkpoint["scaler_state_dict"])
+
+        if self.scheduler is not None and "scheduler_state_dict" in checkpoint:
+            self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+
+        if self.early_stopping is not None and "early_stopping_state" in checkpoint:
+            self.early_stopping.load_state_dict(checkpoint["early_stopping_state"])
 
         epoch = int(checkpoint.get("epoch", 0))
         print(f"Loaded checkpoint from epoch {epoch + 1}")

@@ -20,10 +20,22 @@ class TrainingConfig(BaseModel):
     # Basic training settings
     batch_size: int = 4
     learning_rate: float = 0.001
-    epochs: int = 20
+    epochs: int = 200
     device: str | None = "cuda"
     amp_enabled: bool = True
     num_workers: int = 4
+
+    use_lr_scheduler: bool = True
+    lr_scheduler_type: str = "plateau"
+    lr_scheduler_patience: int = 5
+    lr_scheduler_factor: float = 0.5
+    lr_scheduler_min_lr: float = 1e-6
+    lr_scheduler_step_size: int = 30
+    lr_scheduler_t_max: int = 100
+
+    use_early_stopping: bool = True
+    early_stop_patience: int = 10
+    early_stop_min_delta: float = 1e-5
 
     # Dataset settings
     npz_dir: Path = Path(PROJECT_ROOT_PATH / project_config.vdb_tools.npz_output_directory)
