@@ -9,7 +9,7 @@ from config import _PROJECT_ROOT, project_config
 # Available fields that can be rendered from NPZ files
 AVAILABLE_FIELDS = ["density", "velx", "velz", "vel_magnitude", "emitter", "collider"]
 
-INPUT_NPZ = _PROJECT_ROOT / project_config.vdb_tools.npz_output_directory / "64" / "seq_0004.npz"
+INPUT_NPZ = _PROJECT_ROOT / project_config.vdb_tools.npz_output_directory / "128" / "seq_0000.npz"
 OUTPUT_DIR = _PROJECT_ROOT / "data/npz_image_debug/"
 
 

@@ -8,7 +8,7 @@ import torch
 import torch.multiprocessing as mp
 from torch.utils.data import DataLoader
 
-from config.training_config import TrainingConfig
+from config.training_config import TrainingConfig, project_config
 from dataset.npz_sequence import FluidNPZSequenceDataset
 from models.small_unet import SmallUNet
 from training.trainer import Trainer
@@ -84,21 +84,23 @@ def main() -> None:
         print(f"Using device: {config.device}")
 
     set_seed(config.split_seed)
+    
+    npz_dir: Path = config.npz_dir / str(project_config.simulation.grid_resolution)
 
-    train_idx, val_idx, test_idx = make_splits(config.npz_dir, config.split_ratios, config.split_seed)
+    train_idx, val_idx, test_idx = make_splits(npz_dir, config.split_ratios, config.split_seed)
 
     print(f"Dataset splits: train={len(train_idx)}, val={len(val_idx)}, test={len(test_idx)}")
 
     train_ds = FluidNPZSequenceDataset(
-        npz_dir=config.npz_dir, normalize=config.normalize, seq_indices=train_idx, fake_empty_pct=5
+        npz_dir=npz_dir, normalize=config.normalize, seq_indices=train_idx, fake_empty_pct=config.fake_empty_pct
     )
     val_ds = FluidNPZSequenceDataset(
-        npz_dir=config.npz_dir, normalize=config.normalize, seq_indices=val_idx, fake_empty_pct=5
+        npz_dir=npz_dir, normalize=config.normalize, seq_indices=val_idx, fake_empty_pct=config.fake_empty_pct
     )
 
     # to compare models later
     # test_ds = FluidNPZSequenceDataset(
-    #    npz_dir=config.npz_dir, normalize=config.normalize, seq_indices=test_idx, fake_empty_pct=5
+    #    npz_dir=npz_dir, normalize=config.normalize, seq_indices=test_idx, fake_empty_pct=config.fake_empty_pct
     # )
 
     print(f"Training samples: {len(train_ds)}, Validation samples: {len(val_ds)}")

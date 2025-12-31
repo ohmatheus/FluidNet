@@ -7,8 +7,8 @@ from config.config import PROJECT_ROOT_PATH, project_config
 
 class PhysicsLossConfig(BaseModel):
     mse_weight: float = 1.0
-    divergence_weight: float = 0.01
-    gradient_weight: float = 0.01
+    divergence_weight: float = 0.05
+    gradient_weight: float = 0.05
 
     grid_spacing: float = 2.0 / project_config.simulation.grid_resolution
 
@@ -41,6 +41,7 @@ class TrainingConfig(BaseModel):
     normalize: bool = True
     split_ratios: tuple[float, float, float] = (0.8, 0.2, 0)  # train, val, test - to change
     split_seed: int = 42
+    fake_empty_pct: int = 10
 
     # Model architecture
     in_channels: int = project_config.simulation.input_channels
