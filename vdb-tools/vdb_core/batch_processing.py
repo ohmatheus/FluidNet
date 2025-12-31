@@ -1,4 +1,5 @@
 import re
+from multiprocessing import Pool
 from pathlib import Path
 
 import numpy as np
@@ -375,6 +376,44 @@ def process_single_cache_sequence(
     return n_seqs, sequence_stats_list
 
 
+def _process_cache_worker(args_tuple):
+    (
+        cache_data_dir,
+        blender_caches_root,
+        output_dir,
+        target_resolution,
+        max_frames,
+        save_frames,
+        percentiles,
+        starting_seq_number,
+    ) = args_tuple
+
+    cache_name = cache_data_dir.parent.name
+    print(f"\n{'=' * 60}")
+    print(f"Processing cache: {cache_name}")
+    print(f"{'=' * 60}")
+
+    abc_path = find_abc_for_cache(cache_data_dir, blender_caches_root)
+    abc_metadata = extract_abc_metadata(abc_path, cache_name)
+
+    mesh_metadata = abc_metadata.to_dict()
+
+    sequences_from_cache, cache_stats = process_single_cache_sequence(
+        cache_data_dir=cache_data_dir,
+        output_dir=output_dir,
+        target_resolution=target_resolution,
+        max_frames=max_frames,
+        save_frames=save_frames,
+        starting_seq_number=starting_seq_number,
+        percentiles=percentiles,
+        abc_metadata=abc_metadata,
+    )
+
+    print(f"Generated {sequences_from_cache} sequences from {cache_name}")
+
+    return sequences_from_cache, cache_stats, cache_name, mesh_metadata
+
+
 def process_all_cache_sequences(
     blender_caches_root: Path,
     output_dir: Path,
@@ -384,6 +423,7 @@ def process_all_cache_sequences(
     percentiles: list[int] | None = None,
     normalization_percentile: int = 95,
     stats_output_file: str = "data/_field_stats.yaml",
+    num_workers: int = 1,
 ) -> None:
     cache_data_dirs = discover_cache_sequences(blender_caches_root)
 
@@ -402,35 +442,68 @@ def process_all_cache_sequences(
     global_seq_counter = 0
     total_sequences = 0
     all_sequence_stats: list[SequenceStats] = []
-    all_mesh_metadata = {}  # Store mesh metadata from all caches
+    all_mesh_metadata = {}
 
-    for cache_data_dir in cache_data_dirs:
-        cache_name = cache_data_dir.parent.name
-        print(f"\n{'=' * 60}")
-        print(f"Processing cache: {cache_name}")
-        print(f"{'=' * 60}")
+    if num_workers == 1:
+        for cache_data_dir in cache_data_dirs:
+            cache_name = cache_data_dir.parent.name
+            print(f"\n{'=' * 60}")
+            print(f"Processing cache: {cache_name}")
+            print(f"{'=' * 60}")
 
-        abc_path = find_abc_for_cache(cache_data_dir, blender_caches_root)
-        abc_metadata = extract_abc_metadata(abc_path, cache_name)
+            abc_path = find_abc_for_cache(cache_data_dir, blender_caches_root)
+            abc_metadata = extract_abc_metadata(abc_path, cache_name)
 
-        all_mesh_metadata[cache_name] = abc_metadata.to_dict()
+            all_mesh_metadata[cache_name] = abc_metadata.to_dict()
 
-        sequences_from_cache, cache_stats = process_single_cache_sequence(
-            cache_data_dir=cache_data_dir,
-            output_dir=output_dir,
-            target_resolution=target_resolution,
-            max_frames=max_frames,
-            save_frames=save_frames,
-            starting_seq_number=global_seq_counter,
-            percentiles=percentiles_to_use,
-            abc_metadata=abc_metadata,
-        )
+            sequences_from_cache, cache_stats = process_single_cache_sequence(
+                cache_data_dir=cache_data_dir,
+                output_dir=output_dir,
+                target_resolution=target_resolution,
+                max_frames=max_frames,
+                save_frames=save_frames,
+                starting_seq_number=global_seq_counter,
+                percentiles=percentiles_to_use,
+                abc_metadata=abc_metadata,
+            )
 
-        global_seq_counter += sequences_from_cache
-        total_sequences += sequences_from_cache
-        all_sequence_stats.extend(cache_stats)
+            global_seq_counter += sequences_from_cache
+            total_sequences += sequences_from_cache
+            all_sequence_stats.extend(cache_stats)
 
-        print(f"Generated {sequences_from_cache} sequences from {cache_name}")
+            print(f"Generated {sequences_from_cache} sequences from {cache_name}")
+    else:
+        worker_args = []
+        for idx, cache_data_dir in enumerate(cache_data_dirs):
+            worker_args.append(
+                (
+                    cache_data_dir,
+                    blender_caches_root,
+                    output_dir,
+                    target_resolution,
+                    max_frames,
+                    save_frames,
+                    percentiles_to_use,
+                    idx * 10000,
+                )
+            )
+
+        with Pool(processes=num_workers) as pool:
+            results = pool.map(_process_cache_worker, worker_args)
+
+        for sequences_from_cache, cache_stats, cache_name, mesh_metadata in results:
+            all_mesh_metadata[cache_name] = mesh_metadata
+            total_sequences += sequences_from_cache
+            all_sequence_stats.extend(cache_stats)
+
+        print("\nRenumbering sequences to be sequential...")
+        npz_files = sorted(output_dir.glob("seq_*.npz"))
+        for new_idx, npz_file in enumerate(npz_files):
+            new_name = f"seq_{new_idx:04d}.npz"
+            if npz_file.name != new_name:
+                new_path = output_dir / new_name
+                npz_file.rename(new_path)
+                print(f"  Renamed {npz_file.name} -> {new_name}")
 
     # Compute and save global statistics
     if all_sequence_stats:

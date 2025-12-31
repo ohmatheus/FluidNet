@@ -17,7 +17,7 @@ class PhysicsLossConfig(BaseModel):
 
 
 class TrainingConfig(BaseModel):
-    batch_size: int = 4
+    batch_size: int = 16
     learning_rate: float = 0.001
     epochs: int = 200
     device: str | None = "cuda"

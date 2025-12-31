@@ -27,6 +27,12 @@ def main() -> None:
         default="all",
         help="Resolution to process (64, 128, 256, etc.) or 'all' to process all resolutions (default: all)",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Number of parallel workers for processing cache sequences (default: 1)",
+    )
 
     args = parser.parse_args()
 
@@ -74,6 +80,7 @@ def main() -> None:
             percentiles=project_config.vdb_tools.stats_percentiles,
             normalization_percentile=project_config.vdb_tools.normalization_percentile,
             stats_output_file=project_config.vdb_tools.stats_output_file,
+            num_workers=args.workers,
         )
 
     print(f"\n{'=' * 70}")
