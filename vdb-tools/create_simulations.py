@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 from config import vdb_config
@@ -84,25 +85,16 @@ def generate_simulation(
         return False, "error"
 
 
+def worker_wrapper(task_args: tuple) -> tuple[int, bool, str]:
+    sim_index, resolution, frames, output_base_dir, blend_dir, seed = task_args
+    success, status = generate_simulation(sim_index, resolution, frames, output_base_dir, blend_dir, seed)
+    return (sim_index, success, status)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate batch of randomized Blender fluid simulations",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  Generate 10 simulations at 128 resolution:
-    python create_simulations.py --count 10 --resolution 128
-
-  Quick test with 64 resolution, 50 frames:
-    python create_simulations.py --count 3 --resolution 64 --min-frames 50 --max-frames 50
-
-  Resume interrupted batch:
-    python create_simulations.py --count 10 --resolution 128
-    (Script will skip existing complete caches automatically)
-
-  Start from cache 100:
-    python create_simulations.py --count 20 --start-index 100
-        """,
     )
 
     parser.add_argument("--count", type=int, default=10, help="Number of simulations to generate (default: 10)")
@@ -111,6 +103,7 @@ Examples:
     parser.add_argument("--min-frames", type=int, default=300, help="Minimum frame count (default: 300)")
     parser.add_argument("--max-frames", type=int, default=400, help="Maximum frame count (default: 400)")
     parser.add_argument("--seed", type=int, default=None, help="Base random seed (default: current timestamp)")
+    parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers (default: 1)")
 
     args = parser.parse_args()
 
@@ -124,6 +117,10 @@ Examples:
 
     if args.min_frames > args.max_frames:
         print("Error: --min-frames cannot be greater than --max-frames")
+        sys.exit(1)
+
+    if args.workers <= 0:
+        print("Error: --workers must be positive")
         sys.exit(1)
 
     base_seed = args.seed if args.seed is not None else int(time.time())
@@ -141,6 +138,7 @@ Examples:
     print(f"  Start index: {args.start_index}")
     print(f"  Frame range: [{args.min_frames}, {args.max_frames}]")
     print(f"  Base seed: {base_seed}")
+    print(f"  Workers: {args.workers}")
     print(f"  Output: {output_base_dir / str(args.resolution)}")
     print(f"  Blender: {vdb_config.BLENDER_PATH}")
     print(f"{'=' * 70}")
@@ -150,22 +148,30 @@ Examples:
     skipped = 0
     start_time = time.time()
 
+    tasks = []
     for i in range(args.count):
         sim_index = args.start_index + i
         frames = random.randint(args.min_frames, args.max_frames)
         sim_seed = base_seed + sim_index
+        tasks.append((sim_index, args.resolution, frames, output_base_dir, blend_dir, sim_seed))
 
-        success, status = generate_simulation(sim_index, args.resolution, frames, output_base_dir, blend_dir, sim_seed)
+    with ProcessPoolExecutor(max_workers=args.workers) as executor:
+        future_to_task = {executor.submit(worker_wrapper, task): task for task in tasks}
 
-        if status == "skipped":
-            skipped += 1
-            print("  → Skipped (already exists)")
-        elif success:
-            successful += 1
-            print("  → Success")
-        else:
-            failed += 1
-            print(f"  → Failed ({status})")
+        completed = 0
+        for future in as_completed(future_to_task):
+            completed += 1
+            sim_index, success, status = future.result()
+
+            if status == "skipped":
+                skipped += 1
+                print(f"[{completed}/{args.count}] Simulation {sim_index}: Skipped")
+            elif success:
+                successful += 1
+                print(f"[{completed}/{args.count}] Simulation {sim_index}: Success")
+            else:
+                failed += 1
+                print(f"[{completed}/{args.count}] Simulation {sim_index}: Failed ({status})")
 
     elapsed_time = time.time() - start_time
     total_processed = successful + failed
