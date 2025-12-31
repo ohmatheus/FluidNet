@@ -135,7 +135,7 @@ def discover_cache_sequences(blender_caches_root: Path) -> list[Path]:
 
 
 def process_mesh_masks_for_frame(
-    mesh_list: list,
+    mesh_list: list | None,
     frame_idx: int,
     target_resolution: int,
     axis_order: str,
@@ -144,6 +144,9 @@ def process_mesh_masks_for_frame(
 ) -> np.ndarray:
     combined_mask = np.zeros((target_resolution, target_resolution), dtype=np.float32)
 
+    if mesh_list is None:
+        return combined_mask
+    
     for mesh in mesh_list:
         transform = mesh.transforms_per_frame[frame_idx]
         single_mask = project_mesh_to_grid(
@@ -231,9 +234,10 @@ def process_single_cache_sequence(
     )
 
     collider_meshes = validate_collider_meshes(abc_metadata)
-    print(
-        f"Validated {len(collider_meshes)} collider mesh(es): {', '.join([f'{m.name} ({m.geometry_type})' for m in collider_meshes])}"
-    )
+    if collider_meshes is not None:
+        print(
+            f"Validated {len(collider_meshes)} collider mesh(es): {', '.join([f'{m.name} ({m.geometry_type})' for m in collider_meshes])}"
+        )
 
     for frame_idx, vdb_file in enumerate(vdb_files):
         if abc_metadata and abc_metadata.meshes:
