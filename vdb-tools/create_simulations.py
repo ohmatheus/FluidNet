@@ -25,7 +25,9 @@ def check_cache_exists(cache_dir: Path) -> bool:
     return len(vdb_files) > 0
 
 
-def generate_simulation(sim_index: int, resolution: int, frames: int, output_base_dir: Path, blend_dir: Path, seed: int) -> tuple[bool, str]:
+def generate_simulation(
+    sim_index: int, resolution: int, frames: int, output_base_dir: Path, blend_dir: Path, seed: int
+) -> tuple[bool, str]:
     cache_name = f"cache_{sim_index:04d}"
     resolution_dir = output_base_dir / str(resolution)
     cache_dir = resolution_dir / cache_name
@@ -47,7 +49,7 @@ def generate_simulation(sim_index: int, resolution: int, frames: int, output_bas
         "cache_name": cache_name,
         "output_dir": str(cache_dir.absolute()),
         "blend_output_dir": str(blend_resolution_dir.absolute()),
-        "seed": seed
+        "seed": seed,
     }
 
     blender_path = vdb_config.BLENDER_PATH
@@ -57,13 +59,7 @@ def generate_simulation(sim_index: int, resolution: int, frames: int, output_bas
     if not BLENDER_SCRIPT.exists():
         raise FileNotFoundError(f"Blender script not found: {BLENDER_SCRIPT}")
 
-    cmd = [
-        str(blender_path),
-        "--background",
-        "--python", str(BLENDER_SCRIPT),
-        "--",
-        json.dumps(params)
-    ]
+    cmd = [str(blender_path), "--background", "--python", str(BLENDER_SCRIPT), "--", json.dumps(params)]
 
     print(f"\nSimulation {sim_index}: {cache_name} (res={resolution}, frames={frames}, seed={seed})")
 
@@ -74,21 +70,21 @@ def generate_simulation(sim_index: int, resolution: int, frames: int, output_bas
             if check_cache_exists(cache_dir):
                 return True, "success"
             else:
-                print(f"  Error: Blender succeeded but no VDB files found")
+                print("  Error: Blender succeeded but no VDB files found")
                 return False, "failed"
         else:
             print(f"  Error: Blender exited with code {result.returncode}")
             return False, "failed"
 
     except subprocess.TimeoutExpired:
-        print(f"  Error: Simulation timed out after 1 hour")
+        print("  Error: Simulation timed out after 1 hour")
         return False, "timeout"
     except Exception as e:
         print(f"  Error: {e}")
         return False, "error"
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate batch of randomized Blender fluid simulations",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -106,21 +102,15 @@ Examples:
 
   Start from cache 100:
     python create_simulations.py --count 20 --start-index 100
-        """
+        """,
     )
 
-    parser.add_argument("--count", type=int, default=10,
-                       help="Number of simulations to generate (default: 10)")
-    parser.add_argument("--resolution", type=int, default=128,
-                       help="Grid resolution (default: 128)")
-    parser.add_argument("--start-index", type=int, default=1,
-                       help="Starting cache index (default: 1)")
-    parser.add_argument("--min-frames", type=int, default=300,
-                       help="Minimum frame count (default: 300)")
-    parser.add_argument("--max-frames", type=int, default=400,
-                       help="Maximum frame count (default: 400)")
-    parser.add_argument("--seed", type=int, default=None,
-                       help="Base random seed (default: current timestamp)")
+    parser.add_argument("--count", type=int, default=10, help="Number of simulations to generate (default: 10)")
+    parser.add_argument("--resolution", type=int, default=128, help="Grid resolution (default: 128)")
+    parser.add_argument("--start-index", type=int, default=1, help="Starting cache index (default: 1)")
+    parser.add_argument("--min-frames", type=int, default=300, help="Minimum frame count (default: 300)")
+    parser.add_argument("--max-frames", type=int, default=400, help="Maximum frame count (default: 400)")
+    parser.add_argument("--seed", type=int, default=None, help="Base random seed (default: current timestamp)")
 
     args = parser.parse_args()
 
@@ -142,10 +132,10 @@ Examples:
     output_base_dir = PROJECT_ROOT / "data" / "blender_caches"
     blend_dir = PROJECT_ROOT / "data" / "simulations"
 
-    print(f"\n{'='*70}")
-    print(f"Blender Simulation Batch Generator")
-    print(f"{'='*70}")
-    print(f"Configuration:")
+    print(f"\n{'=' * 70}")
+    print("Blender Simulation Batch Generator")
+    print(f"{'=' * 70}")
+    print("Configuration:")
     print(f"  Count: {args.count}")
     print(f"  Resolution: {args.resolution}")
     print(f"  Start index: {args.start_index}")
@@ -153,7 +143,7 @@ Examples:
     print(f"  Base seed: {base_seed}")
     print(f"  Output: {output_base_dir / str(args.resolution)}")
     print(f"  Blender: {vdb_config.BLENDER_PATH}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     successful = 0
     failed = 0
@@ -165,21 +155,14 @@ Examples:
         frames = random.randint(args.min_frames, args.max_frames)
         sim_seed = base_seed + sim_index
 
-        success, status = generate_simulation(
-            sim_index,
-            args.resolution,
-            frames,
-            output_base_dir,
-            blend_dir,
-            sim_seed
-        )
+        success, status = generate_simulation(sim_index, args.resolution, frames, output_base_dir, blend_dir, sim_seed)
 
         if status == "skipped":
             skipped += 1
-            print(f"  → Skipped (already exists)")
+            print("  → Skipped (already exists)")
         elif success:
             successful += 1
-            print(f"  → Success")
+            print("  → Success")
         else:
             failed += 1
             print(f"  → Failed ({status})")
@@ -187,21 +170,21 @@ Examples:
     elapsed_time = time.time() - start_time
     total_processed = successful + failed
 
-    print(f"\n{'='*70}")
-    print(f"Batch Generation Complete")
-    print(f"{'='*70}")
-    print(f"Results:")
+    print(f"\n{'=' * 70}")
+    print("Batch Generation Complete")
+    print(f"{'=' * 70}")
+    print("Results:")
     print(f"  Total requested: {args.count}")
     print(f"  Successful: {successful}")
     print(f"  Failed: {failed}")
     print(f"  Skipped (existing): {skipped}")
     print(f"  Total processed: {total_processed}")
-    print(f"")
-    print(f"Time:")
-    print(f"  Total elapsed: {elapsed_time:.1f}s ({elapsed_time/60:.1f}min)")
+    print("")
+    print("Time:")
+    print(f"  Total elapsed: {elapsed_time:.1f}s ({elapsed_time / 60:.1f}min)")
     if total_processed > 0:
-        print(f"  Average per sim: {elapsed_time/total_processed:.1f}s")
-    print(f"{'='*70}\n")
+        print(f"  Average per sim: {elapsed_time / total_processed:.1f}s")
+    print(f"{'=' * 70}\n")
 
     if failed > 0:
         sys.exit(1)

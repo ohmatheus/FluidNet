@@ -47,8 +47,8 @@ def project_mesh_to_grid(
     # Convert to grid coordinates [0, grid_resolution]
     # grid_index = (position + 1) * grid_resolution / 2
     # Add 0.5 to account for cell-centered grid (cell centers are at i+0.5)
-    pos_x = (pos_x_norm + 1.0) * grid_resolution / 2.0 #+ 0.5
-    pos_z = (pos_z_norm + 1.0) * grid_resolution / 2.0 #+ 0.5
+    pos_x = (pos_x_norm + 1.0) * grid_resolution / 2.0  # + 0.5
+    pos_z = (pos_z_norm + 1.0) * grid_resolution / 2.0  # + 0.5
 
     scale_x = transform.scale[0]
     scale_z = transform.scale[2]

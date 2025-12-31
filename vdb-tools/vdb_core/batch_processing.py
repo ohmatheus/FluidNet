@@ -146,7 +146,7 @@ def process_mesh_masks_for_frame(
 
     if mesh_list is None:
         return combined_mask
-    
+
     for mesh in mesh_list:
         transform = mesh.transforms_per_frame[frame_idx]
         single_mask = project_mesh_to_grid(

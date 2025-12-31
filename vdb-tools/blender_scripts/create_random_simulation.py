@@ -2,16 +2,19 @@ import json
 import random
 import sys
 from pathlib import Path
+from typing import Any
 
 import bpy  # pyright: ignore
 
 
-def parse_args():
+def parse_args() -> dict[str, Any]:
     argv = sys.argv
     if "--" in argv:
         argv = argv[argv.index("--") + 1 :]
     else:
-        raise ValueError("No arguments provided. Usage: blender --background --python create_random_simulation.py -- <json_params>")
+        raise ValueError(
+            "No arguments provided. Usage: blender --background --python create_random_simulation.py -- <json_params>"
+        )
 
     if len(argv) < 1:
         raise ValueError("JSON parameters required")
@@ -25,12 +28,12 @@ def parse_args():
     return params
 
 
-def create_fresh_scene():
+def create_fresh_scene() -> None:
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
 
-def create_fluid_domain(resolution: int):
-    bpy.ops.object.select_all(action='DESELECT')
+def create_fluid_domain(resolution: int) -> Any:
+    bpy.ops.object.select_all(action="DESELECT")
     bpy.ops.mesh.primitive_cube_add(location=(0, 0, 0))
     domain = bpy.context.active_object
     domain.name = "Domain"
@@ -41,12 +44,12 @@ def create_fluid_domain(resolution: int):
     domain.select_set(True)
     bpy.context.view_layer.objects.active = domain
 
-    bpy.ops.object.modifier_add(type='FLUID')
+    bpy.ops.object.modifier_add(type="FLUID")
     fluid_mod = domain.modifiers["Fluid"]
-    fluid_mod.fluid_type = 'DOMAIN'
+    fluid_mod.fluid_type = "DOMAIN"
 
     domain_settings = fluid_mod.domain_settings
-    domain_settings.domain_type = 'GAS'
+    domain_settings.domain_type = "GAS"
     domain_settings.resolution_max = resolution
 
     domain_settings.use_collision_border_front = True
@@ -64,28 +67,28 @@ def create_fluid_domain(resolution: int):
     return domain
 
 
-def configure_emitter(obj):
-    bpy.ops.object.modifier_add(type='FLUID')
+def configure_emitter(obj: Any) -> None:
+    bpy.ops.object.modifier_add(type="FLUID")
     fluid_mod = obj.modifiers["Fluid"]
-    fluid_mod.fluid_type = 'FLOW'
+    fluid_mod.fluid_type = "FLOW"
 
     flow_settings = fluid_mod.flow_settings
-    flow_settings.flow_type = 'SMOKE'
-    flow_settings.flow_behavior = 'INFLOW'
+    flow_settings.flow_type = "SMOKE"
+    flow_settings.flow_behavior = "INFLOW"
     flow_settings.density = 1.0
     flow_settings.temperature = 0.0
-    flow_settings.flow_source = 'MESH'
+    flow_settings.flow_source = "MESH"
     flow_settings.volume_density = 1.0
     flow_settings.surface_distance = 0.0
 
 
-def configure_collider(obj):
-    bpy.ops.object.modifier_add(type='FLUID')
+def configure_collider(obj: Any) -> None:
+    bpy.ops.object.modifier_add(type="FLUID")
     fluid_mod = obj.modifiers["Fluid"]
-    fluid_mod.fluid_type = 'EFFECTOR'
+    fluid_mod.fluid_type = "EFFECTOR"
 
 
-def create_random_meshes(seed: int):
+def create_random_meshes(seed: int) -> list[dict[str, Any]]:
     random.seed(seed)
 
     num_meshes = random.randint(2, 6)
@@ -94,15 +97,15 @@ def create_random_meshes(seed: int):
     meshes_info = []
 
     for i in range(num_meshes):
-        mesh_type = random.choice(['CUBE', 'SPHERE'])
+        mesh_type = random.choice(["CUBE", "SPHERE"])
         position = (random.uniform(-1, 1), 0, random.uniform(-1, 1))
 
         if i == 0:
-            role = 'Emitter'
+            role = "Emitter"
         else:
-            role = random.choice(['Emitter', 'Collider'])
+            role = random.choice(["Emitter", "Collider"])
 
-        if mesh_type == 'CUBE':
+        if mesh_type == "CUBE":
             # Cubes get independent X and Z scales (Y stays 1.0 for projection)
             scale_x = random.uniform(0.1, 0.3)
             scale_z = random.uniform(0.1, 0.3)
@@ -123,12 +126,12 @@ def create_random_meshes(seed: int):
 
             obj.scale = (uniform_scale, uniform_scale, uniform_scale)
 
-        obj.name = f"{role}_{i+1}"
+        obj.name = f"{role}_{i + 1}"
 
         # Add animation data to match manually-created meshes
         obj.animation_data_create()
 
-        if role == 'Emitter':
+        if role == "Emitter":
             configure_emitter(obj)
         else:
             configure_collider(obj)
@@ -136,31 +139,37 @@ def create_random_meshes(seed: int):
         # Get actual scale from object (handles both cube and sphere cases)
         actual_scale = obj.scale
 
-        meshes_info.append({
-            "name": obj.name,
-            "type": mesh_type,
-            "role": role,
-            "position": position,
-            "scale": (actual_scale.x, actual_scale.y, actual_scale.z)
-        })
+        meshes_info.append(
+            {
+                "name": obj.name,
+                "type": mesh_type,
+                "role": role,
+                "position": position,
+                "scale": (actual_scale.x, actual_scale.y, actual_scale.z),
+            }
+        )
 
-        if mesh_type == 'CUBE':
-            print(f"  - {obj.name}: {mesh_type} at ({position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f}), scale=({actual_scale.x:.2f}, {actual_scale.y:.2f}, {actual_scale.z:.2f})")
+        if mesh_type == "CUBE":
+            print(
+                f"  - {obj.name}: {mesh_type} at ({position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f}), scale=({actual_scale.x:.2f}, {actual_scale.y:.2f}, {actual_scale.z:.2f})"
+            )
         else:
-            print(f"  - {obj.name}: {mesh_type} at ({position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f}), scale={actual_scale.x:.2f}")
+            print(
+                f"  - {obj.name}: {mesh_type} at ({position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f}), scale={actual_scale.x:.2f}"
+            )
 
     return meshes_info
 
 
-def bake_and_export(domain, params: dict, meshes_info: list):
+def bake_and_export(domain: Any, params: dict[str, Any], meshes_info: list[dict[str, Any]]) -> None:
     output_dir = Path(params["output_dir"])
     blend_output_dir = Path(params["blend_output_dir"])
     cache_name = params["cache_name"]
     frames = params["frames"]
 
     domain_settings = domain.modifiers["Fluid"].domain_settings
-    domain_settings.cache_type = 'MODULAR'
-    domain_settings.cache_data_format = 'OPENVDB'
+    domain_settings.cache_type = "MODULAR"
+    domain_settings.cache_data_format = "OPENVDB"
     domain_settings.cache_directory = str(output_dir.absolute())
 
     domain_settings.cache_frame_start = 1
@@ -172,7 +181,7 @@ def bake_and_export(domain, params: dict, meshes_info: list):
     print(f"Baking simulation (frames 1-{frames})...")
     print(f"  Cache directory: {output_dir}")
 
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
     domain.select_set(True)
     bpy.context.view_layer.objects.active = domain
 
@@ -192,10 +201,10 @@ def bake_and_export(domain, params: dict, meshes_info: list):
 
     print(f"Bake complete: {len(vdb_files)} VDB files generated")
 
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
     selected_count = 0
     for obj in bpy.data.objects:
-        if 'Emitter' in obj.name or 'Collider' in obj.name:
+        if "Emitter" in obj.name or "Collider" in obj.name:
             obj.select_set(True)
             selected_count += 1
 
@@ -206,7 +215,7 @@ def bake_and_export(domain, params: dict, meshes_info: list):
     # Use the first emitter/collider mesh and add tiny position change
     first_mesh = None
     for obj in bpy.data.objects:
-        if 'Emitter' in obj.name or 'Collider' in obj.name:
+        if "Emitter" in obj.name or "Collider" in obj.name:
             first_mesh = obj
             break
 
@@ -241,32 +250,34 @@ def bake_and_export(domain, params: dict, meshes_info: list):
     print(f"Saving blend file: {blend_path}")
 
     for area in bpy.context.screen.areas:
-        if area.type == 'VIEW_3D':
+        if area.type == "VIEW_3D":
             for space in area.spaces:
-                if space.type == 'VIEW_3D':
-                    space.shading.type = 'WIREFRAME'
+                if space.type == "VIEW_3D":
+                    space.shading.type = "WIREFRAME"
 
     bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Simulation complete: {cache_name}")
     print(f"  VDB files: {len(vdb_files)}")
     print(f"  Alembic: {abc_path.name}")
     print(f"  Blend file: {blend_path.name}")
-    print(f"  Meshes: {len(meshes_info)} ({sum(1 for m in meshes_info if m['role'] == 'Emitter')} emitters, {sum(1 for m in meshes_info if m['role'] == 'Collider')} colliders)")
-    print(f"{'='*60}")
+    print(
+        f"  Meshes: {len(meshes_info)} ({sum(1 for m in meshes_info if m['role'] == 'Emitter')} emitters, {sum(1 for m in meshes_info if m['role'] == 'Collider')} colliders)"
+    )
+    print(f"{'=' * 60}")
 
 
-def main():
+def main() -> None:
     try:
         params = parse_args()
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Creating simulation: {params['cache_name']}")
         print(f"  Resolution: {params['resolution']}")
         print(f"  Frames: {params['frames']}")
         print(f"  Seed: {params['seed']}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
         create_fresh_scene()
         domain = create_fluid_domain(params["resolution"])

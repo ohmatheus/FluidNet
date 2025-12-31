@@ -55,9 +55,9 @@ def main() -> None:
             print(f"Warning: Resolution directory not found, skipping: {cache_dir}")
             continue
 
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print(f"Processing resolution: {resolution}x{resolution}")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
         print(f"Input directory: {cache_dir}")
         print(f"Output directory: {output_dir}")
 
@@ -76,9 +76,9 @@ def main() -> None:
             stats_output_file=project_config.vdb_tools.stats_output_file,
         )
 
-    print(f"\n{'='*70}")
-    print(f"All resolutions processed!")
-    print(f"{'='*70}")
+    print(f"\n{'=' * 70}")
+    print("All resolutions processed!")
+    print(f"{'=' * 70}")
 
 
 if __name__ == "__main__":
