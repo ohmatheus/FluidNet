@@ -21,14 +21,11 @@ def validate_emitter_meshes(abc_metadata: AlembicMetadata) -> list[MeshMetadata]
     return emitters
 
 
-def validate_collider_meshes(abc_metadata: AlembicMetadata) -> list[MeshMetadata]:
+def validate_collider_meshes(abc_metadata: AlembicMetadata) -> list[MeshMetadata] | None:
     colliders = [m for m in abc_metadata.meshes if "Collider" in m.name]
 
     if len(colliders) == 0:
-        available_meshes = [m.name for m in abc_metadata.meshes]
-        raise ValueError(
-            f"No mesh containing 'Collider' in name found in Alembic metadata. Available meshes: {available_meshes}"
-        )
+        return None
 
     for collider in colliders:
         if collider.geometry_type not in ["Cube", "Sphere"]:
@@ -50,8 +47,8 @@ def project_mesh_to_grid(
     # Convert to grid coordinates [0, grid_resolution]
     # grid_index = (position + 1) * grid_resolution / 2
     # Add 0.5 to account for cell-centered grid (cell centers are at i+0.5)
-    pos_x = (pos_x_norm + 1.0) * grid_resolution / 2.0 - 1  # 0.5
-    pos_z = (pos_z_norm + 1.0) * grid_resolution / 2.0 - 1  # 0.5
+    pos_x = (pos_x_norm + 1.0) * grid_resolution / 2.0 #+ 0.5
+    pos_z = (pos_z_norm + 1.0) * grid_resolution / 2.0 #+ 0.5
 
     scale_x = transform.scale[0]
     scale_z = transform.scale[2]
@@ -64,11 +61,16 @@ def project_mesh_to_grid(
     scale_x_grid = scale_x * grid_resolution
     scale_z_grid = scale_z * grid_resolution
 
-    # Grid coordinates - pixel centers
+    # Grid coordinates - pixel centers at 0.5, 1.5, ..., grid_resolution-0.5
     x_coords = np.arange(grid_resolution, dtype=np.float32) + 0.5
     z_coords = np.arange(grid_resolution, dtype=np.float32) + 0.5
 
     Z, X = np.meshgrid(z_coords, x_coords, indexing="ij")
+
+    # Convert grid coordinates to world space [-1, 1] to check domain bounds
+    # World position = (grid_coord / (grid_resolution/2)) - 1
+    X_world = (X / (grid_resolution / 2.0)) - 1.0
+    Z_world = (Z / (grid_resolution / 2.0)) - 1.0
 
     X_local = X - pos_x
     Z_local = Z - pos_z
@@ -99,7 +101,12 @@ def project_mesh_to_grid(
     else:
         raise ValueError(f"Unsupported geometry_type: {geometry_type}. Only 'Cube' and 'Sphere' are supported.")
 
-    # Convert boolean mask to float32 - todo check later if binary can do
+    # Clip to domain bounds: only include pixels whose world-space position is within [-1, 1]
+    # This ensures meshes outside the domain don't extend into the grid
+    domain_mask = (X_world >= -1.0) & (X_world <= 1.0) & (Z_world >= -1.0) & (Z_world <= 1.0)
+    mask = mask & domain_mask
+
+    # Convert boolean mask to float32
     mesh_grid = mask.astype(np.float32)
 
     return mesh_grid

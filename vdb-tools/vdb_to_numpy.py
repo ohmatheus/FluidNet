@@ -21,36 +21,64 @@ def main() -> None:
         action="store_true",
         help="Also save per-frame .npy files for debugging (density_####.npy, velx_####.npy, velz_####.npy)",
     )
+    parser.add_argument(
+        "--resolution",
+        type=str,
+        default="all",
+        help="Resolution to process (64, 128, 256, etc.) or 'all' to process all resolutions (default: all)",
+    )
 
     args = parser.parse_args()
 
     blender_caches_root = (PROJECT_ROOT_PATH / project_config.vdb_tools.blender_cache_directory).resolve()
-    output_dir = (PROJECT_ROOT_PATH / project_config.vdb_tools.npz_output_directory).resolve()
+    npz_output_root = (PROJECT_ROOT_PATH / project_config.vdb_tools.npz_output_directory).resolve()
 
     if not blender_caches_root.exists():
         print(f"Error: Blender caches root directory not found: {blender_caches_root}")
         return
 
-    resolution = project_config.simulation.grid_resolution
+    if args.resolution == "all":
+        resolutions = [d.name for d in blender_caches_root.iterdir() if d.is_dir() and d.name.isdigit()]
+        if not resolutions:
+            print(f"Error: No resolution subdirectories found in {blender_caches_root}")
+            return
+        print(f"Found resolutions: {', '.join(sorted(resolutions))}")
+    else:
+        resolutions = [args.resolution]
 
-    print(f"Blender caches root: {blender_caches_root}")
-    print(f"Output directory: {output_dir}")
-    print(f"Target resolution: {resolution}x{resolution}")
+    for resolution_str in resolutions:
+        resolution = int(resolution_str)
+        cache_dir = blender_caches_root / resolution_str
+        output_dir = npz_output_root / resolution_str
 
-    if output_dir.exists():
-        print(f"Clearing output directory: {output_dir}")
-        shutil.rmtree(output_dir)
+        if not cache_dir.exists():
+            print(f"Warning: Resolution directory not found, skipping: {cache_dir}")
+            continue
 
-    process_all_cache_sequences(
-        blender_caches_root=blender_caches_root,
-        output_dir=output_dir,
-        target_resolution=resolution,
-        max_frames=args.max_frames,
-        save_frames=args.save_frames,
-        percentiles=project_config.vdb_tools.stats_percentiles,
-        normalization_percentile=project_config.vdb_tools.normalization_percentile,
-        stats_output_file=project_config.vdb_tools.stats_output_file,
-    )
+        print(f"\n{'='*70}")
+        print(f"Processing resolution: {resolution}x{resolution}")
+        print(f"{'='*70}")
+        print(f"Input directory: {cache_dir}")
+        print(f"Output directory: {output_dir}")
+
+        if output_dir.exists():
+            print(f"Clearing output directory: {output_dir}")
+            shutil.rmtree(output_dir)
+
+        process_all_cache_sequences(
+            blender_caches_root=cache_dir,
+            output_dir=output_dir,
+            target_resolution=resolution,
+            max_frames=args.max_frames,
+            save_frames=args.save_frames,
+            percentiles=project_config.vdb_tools.stats_percentiles,
+            normalization_percentile=project_config.vdb_tools.normalization_percentile,
+            stats_output_file=project_config.vdb_tools.stats_output_file,
+        )
+
+    print(f"\n{'='*70}")
+    print(f"All resolutions processed!")
+    print(f"{'='*70}")
 
 
 if __name__ == "__main__":
