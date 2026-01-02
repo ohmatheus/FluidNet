@@ -96,6 +96,59 @@ def configure_collider(obj: Any) -> None:
     fluid_mod.fluid_type = "EFFECTOR"
 
 
+def clamp_to_bounds(position: tuple, margin: float = 0.1) -> tuple:
+    min_val = -1.0 + margin
+    max_val = 1.0 - margin
+
+    x = max(min_val, min(max_val, position[0]))
+    y = 0
+    z = max(min_val, min(max_val, position[2]))
+
+    return (x, y, z)
+
+
+def animate_emitter(obj: Any, mesh_type: str, frames: int) -> None:
+    start_pos = obj.location.copy()
+    max_displacement = random.uniform(0.2, 0.6)
+
+    middle_x = start_pos.x + random.uniform(-max_displacement, max_displacement)
+    middle_z = start_pos.z + random.uniform(-max_displacement, max_displacement)
+    middle_pos = clamp_to_bounds((middle_x, 0, middle_z))
+
+    end_x = start_pos.x + random.uniform(-max_displacement, max_displacement)
+    end_z = start_pos.z + random.uniform(-max_displacement, max_displacement)
+    end_pos = clamp_to_bounds((end_x, 0, end_z))
+
+    obj.location = start_pos
+    obj.keyframe_insert(data_path="location", frame=1)
+
+    obj.location = middle_pos
+    obj.keyframe_insert(data_path="location", frame=frames // 2)
+
+    obj.location = end_pos
+    obj.keyframe_insert(data_path="location", frame=frames)
+
+    for fcurve in obj.animation_data.action.fcurves:
+        for keyframe in fcurve.keyframe_points:
+            keyframe.interpolation = "BEZIER"
+
+    if mesh_type == "CUBE":
+        start_rot = obj.rotation_euler[1]
+
+        rot_direction = random.choice([-1, 1])
+        middle_rot = start_rot + rot_direction * random.uniform(1.57, 3.14)
+        end_rot = middle_rot + rot_direction * random.uniform(1.57, 3.14)
+
+        obj.rotation_euler[1] = start_rot
+        obj.keyframe_insert(data_path="rotation_euler", index=1, frame=1)
+
+        obj.rotation_euler[1] = middle_rot
+        obj.keyframe_insert(data_path="rotation_euler", index=1, frame=frames // 2)
+
+        obj.rotation_euler[1] = end_rot
+        obj.keyframe_insert(data_path="rotation_euler", index=1, frame=frames)
+
+
 def create_shape_component(position: tuple, scale: tuple, parent: Any, name: str) -> Any:
     bpy.ops.mesh.primitive_cube_add(location=position)
     cube = bpy.context.active_object
@@ -147,18 +200,19 @@ def create_complex_shape(
     return [parent] + cubes
 
 
-def create_random_meshes(seed: int) -> list[dict[str, Any]]:
+def create_random_meshes(seed: int, frames: int) -> list[dict[str, Any]]:
     random.seed(seed)
 
-    num_meshes = random.randint(2, 6)
-    print(f"Creating {num_meshes} random meshes (seed={seed})")
+    num_emitters = random.randint(1, 3)
+    num_colliders = random.randint(1, 3)
+    num_meshes = num_emitters + num_colliders
+
+    print(f"Creating {num_meshes} random meshes ({num_emitters} emitters, {num_colliders} colliders, seed={seed})")
 
     meshes_info = []
 
-    roles = []
-    roles.append("Emitter")
-    for i in range(1, num_meshes):
-        roles.append(random.choice(["Emitter", "Collider"]))
+    roles = ["Emitter"] * num_emitters + ["Collider"] * num_colliders
+    random.shuffle(roles)
 
     num_colliders = roles.count("Collider")
     num_simple_colliders = num_colliders // 2
@@ -171,9 +225,9 @@ def create_random_meshes(seed: int) -> list[dict[str, Any]]:
     for i, role in enumerate(roles):
         x = random.uniform(-1, 1)
         if role == "Emitter":
-            z = random.uniform(-1.0, 0.5)
+            z = random.uniform(-1.0, 0.33)
         else:
-            z = random.uniform(-0.5, 1.0)
+            z = random.uniform(-0.33, 1.0)
 
         position = (x, 0, z)
 
@@ -202,17 +256,28 @@ def create_random_meshes(seed: int) -> list[dict[str, Any]]:
             obj.name = f"{role}_{i + 1}"
             obj.animation_data_create()
             configure_emitter(obj)
+            animate_emitter(obj, mesh_type, frames)
 
             actual_scale = obj.scale
 
             meshes_info.append(
-                {"name": obj.name, "type": mesh_type, "role": role, "position": position, "scale": (actual_scale.x, actual_scale.y, actual_scale.z)}
+                {
+                    "name": obj.name,
+                    "type": mesh_type,
+                    "role": role,
+                    "position": position,
+                    "scale": (actual_scale.x, actual_scale.y, actual_scale.z),
+                }
             )
 
             if mesh_type == "CUBE":
-                print(f"  - {obj.name}: {mesh_type} at ({position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f}), scale=({actual_scale.x:.2f}, {actual_scale.y:.2f}, {actual_scale.z:.2f})")
+                print(
+                    f"  - {obj.name}: {mesh_type} at ({position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f}), scale=({actual_scale.x:.2f}, {actual_scale.y:.2f}, {actual_scale.z:.2f})"
+                )
             else:
-                print(f"  - {obj.name}: {mesh_type} at ({position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f}), scale={actual_scale.x:.2f}")
+                print(
+                    f"  - {obj.name}: {mesh_type} at ({position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f}), scale={actual_scale.x:.2f}"
+                )
 
         else:
             collider_type = next(collider_type_iter)
@@ -246,13 +311,23 @@ def create_random_meshes(seed: int) -> list[dict[str, Any]]:
                 actual_scale = obj.scale
 
                 meshes_info.append(
-                    {"name": obj.name, "type": mesh_type, "role": role, "position": position, "scale": (actual_scale.x, actual_scale.y, actual_scale.z)}
+                    {
+                        "name": obj.name,
+                        "type": mesh_type,
+                        "role": role,
+                        "position": position,
+                        "scale": (actual_scale.x, actual_scale.y, actual_scale.z),
+                    }
                 )
 
                 if mesh_type == "CUBE":
-                    print(f"  - {obj.name}: {mesh_type} at ({position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f}), scale=({actual_scale.x:.2f}, {actual_scale.y:.2f}, {actual_scale.z:.2f})")
+                    print(
+                        f"  - {obj.name}: {mesh_type} at ({position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f}), scale=({actual_scale.x:.2f}, {actual_scale.y:.2f}, {actual_scale.z:.2f})"
+                    )
                 else:
-                    print(f"  - {obj.name}: {mesh_type} at ({position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f}), scale={actual_scale.x:.2f}")
+                    print(
+                        f"  - {obj.name}: {mesh_type} at ({position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f}), scale={actual_scale.x:.2f}"
+                    )
 
             else:
                 shape_type = random.choice(["T", "L", "cross", "stairs"])
@@ -332,27 +407,6 @@ def bake_and_export(domain: Any, params: dict[str, Any], meshes_info: list[dict[
     if selected_count == 0:
         raise RuntimeError("No emitter/collider meshes found for Alembic export")
 
-    # Add imperceptible animation to trigger Alembic frame range export
-    # Use the first emitter/collider mesh and add tiny position change
-    first_mesh = None
-    for obj in bpy.data.objects:
-        if "Emitter" in obj.name or "Collider" in obj.name:
-            first_mesh = obj
-            break
-
-    if first_mesh:
-        # Add keyframe at frame 1 with original position
-        bpy.context.scene.frame_set(1)
-        first_mesh.keyframe_insert(data_path="location", frame=1)
-
-        # Add keyframe at final frame with imperceptible offset (0.0001 units)
-        bpy.context.scene.frame_set(frames)
-        original_loc = first_mesh.location.copy()
-        first_mesh.location.z += 0.0001  # Tiny offset that won't affect simulation
-        first_mesh.keyframe_insert(data_path="location", frame=frames)
-        first_mesh.location = original_loc  # Reset to original
-        print(f"  Added imperceptible animation to {first_mesh.name} to trigger Alembic frame range")
-
     bpy.context.scene.frame_start = 1
     bpy.context.scene.frame_end = frames
 
@@ -402,7 +456,7 @@ def main() -> None:
 
         create_fresh_scene()
         domain = create_fluid_domain(params["resolution"])
-        meshes_info = create_random_meshes(params["seed"])
+        meshes_info = create_random_meshes(params["seed"], params["frames"])
         bake_and_export(domain, params, meshes_info)
 
         print("\nSUCCESS\n")
