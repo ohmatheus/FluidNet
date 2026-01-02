@@ -291,6 +291,7 @@ def process_single_cache_sequence(
 
                 if hw_ref is None:
                     hw_ref = d.shape
+
                 if (
                     d.shape != hw_ref
                     or vx.shape != hw_ref
@@ -376,7 +377,9 @@ def process_single_cache_sequence(
     return n_seqs, sequence_stats_list
 
 
-def _process_cache_worker(args_tuple):
+def _process_cache_worker(
+    args_tuple: tuple[Path, Path, Path, int, int | None, bool, list[int] | None, int],
+) -> tuple[int, list[SequenceStats], str, dict]:
     (
         cache_data_dir,
         blender_caches_root,
@@ -385,7 +388,7 @@ def _process_cache_worker(args_tuple):
         max_frames,
         save_frames,
         percentiles,
-        starting_seq_number,
+        cache_number,
     ) = args_tuple
 
     cache_name = cache_data_dir.parent.name
@@ -404,7 +407,7 @@ def _process_cache_worker(args_tuple):
         target_resolution=target_resolution,
         max_frames=max_frames,
         save_frames=save_frames,
-        starting_seq_number=starting_seq_number,
+        starting_seq_number=cache_number,
         percentiles=percentiles,
         abc_metadata=abc_metadata,
     )
@@ -474,7 +477,11 @@ def process_all_cache_sequences(
             print(f"Generated {sequences_from_cache} sequences from {cache_name}")
     else:
         worker_args = []
-        for idx, cache_data_dir in enumerate(cache_data_dirs):
+        for cache_data_dir in cache_data_dirs:
+            cache_name = cache_data_dir.parent.name
+            cache_num_match = re.search(r"(\d+)", cache_name)
+            cache_number = int(cache_num_match.group(1)) if cache_num_match else 0
+
             worker_args.append(
                 (
                     cache_data_dir,
@@ -484,7 +491,7 @@ def process_all_cache_sequences(
                     max_frames,
                     save_frames,
                     percentiles_to_use,
-                    idx * 10000,
+                    cache_number,
                 )
             )
 
@@ -495,15 +502,6 @@ def process_all_cache_sequences(
             all_mesh_metadata[cache_name] = mesh_metadata
             total_sequences += sequences_from_cache
             all_sequence_stats.extend(cache_stats)
-
-        print("\nRenumbering sequences to be sequential...")
-        npz_files = sorted(output_dir.glob("seq_*.npz"))
-        for new_idx, npz_file in enumerate(npz_files):
-            new_name = f"seq_{new_idx:04d}.npz"
-            if npz_file.name != new_name:
-                new_path = output_dir / new_name
-                npz_file.rename(new_path)
-                print(f"  Renamed {npz_file.name} -> {new_name}")
 
     # Compute and save global statistics
     if all_sequence_stats:
