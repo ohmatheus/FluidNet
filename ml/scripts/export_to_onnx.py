@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 
 from config.config import PROJECT_ROOT_PATH, project_config
-from models.small_unet import SmallUNet
+from models.small_unet_full import SmallUNetFull, SmallUNetFullConfig
 
 CHECKPOINT_FILENAME = "best_model.pth"
 RESOLUTION = project_config.simulation.grid_resolution
@@ -14,7 +14,7 @@ ONNX_OPSET_VERSION = 18  # Modern opset with good compatibility
 DEVICE = "cuda"
 
 
-def load_model_from_checkpoint(checkpoint_path: Path, device: str) -> SmallUNet:
+def load_model_from_checkpoint(checkpoint_path: Path, device: str) -> SmallUNetFull:
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
     if "config" not in checkpoint:
@@ -31,12 +31,28 @@ def load_model_from_checkpoint(checkpoint_path: Path, device: str) -> SmallUNet:
     out_channels = config["out_channels"]
     base_channels = config["base_channels"]
     depth = config["depth"]
+    norm = config.get("norm", "group")
+    act = config.get("act", "silu")
+    group_norm_groups = config.get("group_norm_groups", 8)
+    dropout = config.get("dropout", 0.0)
+    upsample = config.get("upsample", "nearest")
+    use_residual = config.get("use_residual", True)
+    bottleneck_blocks = config.get("bottleneck_blocks", 1)
 
-    model = SmallUNet(
-        in_channels=in_channels,
-        out_channels=out_channels,
-        base_channels=base_channels,
-        depth=depth,
+    model = SmallUNetFull(
+        cfg=SmallUNetFullConfig(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            base_channels=base_channels,
+            depth=depth,
+            norm=norm,
+            act=act,
+            group_norm_groups=group_norm_groups,
+            dropout=dropout,
+            upsample=upsample,
+            use_residual=use_residual,
+            bottleneck_blocks=bottleneck_blocks,
+        )
     )
 
     model.load_state_dict(checkpoint["model_state_dict"])

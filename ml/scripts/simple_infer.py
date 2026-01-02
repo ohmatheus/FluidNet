@@ -96,8 +96,8 @@ def create_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--model-name",
         type=str,
-        default="SmallUnet",
-        help="Model name (checkpoint folder name, default: SmallUnet)",
+        default="SmallUnetFull",
+        help="Model name (checkpoint folder name, default: SmallUnetFull)",
     )
     parser.add_argument(
         "--num-frames",
