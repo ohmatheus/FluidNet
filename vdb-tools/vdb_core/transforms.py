@@ -11,11 +11,12 @@ def calculate_padding(
     """
     Calculate padding needed to restore full domain coordinates.
     Computes padding amounts to expand the active voxel region to full domain size.
+    VDB uses 0-based indexing, so valid indices are [0, target_resolution-1].
     """
-    pad_x_before = max(0, min_x - 1)
-    pad_x_after = max(0, target_resolution - max_x)
-    pad_z_before = max(0, min_z - 1)
-    pad_z_after = max(0, target_resolution - max_z)
+    pad_x_before = max(0, min_x)
+    pad_x_after = max(0, (target_resolution - 1) - max_x)
+    pad_z_before = max(0, min_z)
+    pad_z_after = max(0, (target_resolution - 1) - max_z)
 
     return pad_x_before, pad_x_after, pad_z_before, pad_z_after
 
