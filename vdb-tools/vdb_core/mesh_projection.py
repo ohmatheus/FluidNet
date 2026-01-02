@@ -44,11 +44,8 @@ def project_mesh_to_grid(
     pos_x_norm = transform.translation[0]  # X position in [-1, 1]
     pos_z_norm = transform.translation[2]  # Z position in [-1, 1]
 
-    # Convert to grid coordinates [0, grid_resolution]
-    # grid_index = (position + 1) * grid_resolution / 2
-    # Add 0.5 to account for cell-centered grid (cell centers are at i+0.5)
-    pos_x = (pos_x_norm + 1.0) * grid_resolution / 2.0  # + 0.5
-    pos_z = (pos_z_norm + 1.0) * grid_resolution / 2.0  # + 0.5
+    pos_x = (pos_x_norm + 1.0) * grid_resolution / 2.0
+    pos_z = (pos_z_norm + 1.0) * grid_resolution / 2.0
 
     scale_x = transform.scale[0]
     scale_z = transform.scale[2]
@@ -56,21 +53,13 @@ def project_mesh_to_grid(
     if scale_x <= 0 or scale_z <= 0:
         raise ValueError(f"Invalid scale: X={scale_x}, Z={scale_z}. Scale components must be positive.")
 
-    # Scale represents half-extent (radius) in Blender in normalized [-1,1] space
-    # Convert to grid units: multiply by grid_resolution/2 to get radius in pixels
     scale_x_grid = scale_x * grid_resolution
     scale_z_grid = scale_z * grid_resolution
 
-    # Grid coordinates - pixel centers at 0.5, 1.5, ..., grid_resolution-0.5
     x_coords = np.arange(grid_resolution, dtype=np.float32) + 0.5
     z_coords = np.arange(grid_resolution, dtype=np.float32) + 0.5
 
     Z, X = np.meshgrid(z_coords, x_coords, indexing="ij")
-
-    # Convert grid coordinates to world space [-1, 1] to check domain bounds
-    # World position = (grid_coord / (grid_resolution/2)) - 1
-    X_world = (X / (grid_resolution / 2.0)) - 1.0
-    Z_world = (Z / (grid_resolution / 2.0)) - 1.0
 
     X_local = X - pos_x
     Z_local = Z - pos_z
@@ -92,21 +81,19 @@ def project_mesh_to_grid(
     Z_norm = Z_rotated / (scale_z_grid / 2.0)
 
     if geometry_type == "Cube":
-        # rectangle
         mask = (np.abs(X_norm) <= 1.0) & (np.abs(Z_norm) <= 1.0)
     elif geometry_type == "Sphere":
-        # circle
         distance_sq = X_norm**2 + Z_norm**2
         mask = distance_sq <= 1.0
     else:
         raise ValueError(f"Unsupported geometry_type: {geometry_type}. Only 'Cube' and 'Sphere' are supported.")
 
-    # Clip to domain bounds: only include pixels whose world-space position is within [-1, 1]
-    # This ensures meshes outside the domain don't extend into the grid
-    domain_mask = (X_world >= -1.0) & (X_world <= 1.0) & (Z_world >= -1.0) & (Z_world <= 1.0)
-    mask = mask & domain_mask
+    # Clip to exclude the outermost 1 cell on each side to create a border
+    # Grid coordinates go from 0.5 to grid_resolution-0.5
+    # Exclude cells where grid coordinate < 1.5 or > grid_resolution-1.5
+    border_mask = (X >= 1.5) & (X <= grid_resolution - 1.5) & (Z >= 1.5) & (Z <= grid_resolution - 1.5)
+    mask = mask & border_mask
 
-    # Convert boolean mask to float32
     mesh_grid = mask.astype(np.float32)
 
     return mesh_grid
