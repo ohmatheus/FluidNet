@@ -84,7 +84,7 @@ def main() -> None:
         print(f"Using device: {config.device}")
 
     set_seed(config.split_seed)
-    
+
     npz_dir: Path = config.npz_dir / str(project_config.simulation.grid_resolution)
 
     train_idx, val_idx, test_idx = make_splits(npz_dir, config.split_ratios, config.split_seed)
