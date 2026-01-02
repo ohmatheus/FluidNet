@@ -7,7 +7,7 @@ import onnxruntime as ort  # type: ignore[import-untyped]
 import torch
 from numpy.typing import NDArray
 
-from models.small_unet import SmallUNet
+from models.small_unet_full import SmallUNetFull, SmallUNetFullConfig
 
 Backend = Literal["pytorch", "onnx"]
 
@@ -30,7 +30,7 @@ class InferenceBackend(ABC):
 class PyTorchBackend(InferenceBackend):
     def __init__(self) -> None:
         self._device: str = "cpu"
-        self._model: SmallUNet | None = None
+        self._model: SmallUNetFull | None = None
 
     def load_model(self, model_path: str | Path, device: str) -> None:
         self._device = device
@@ -45,11 +45,28 @@ class PyTorchBackend(InferenceBackend):
         if missing_keys:
             raise KeyError(f"Checkpoint config missing: {missing_keys}")
 
-        self._model = SmallUNet(
-            in_channels=config["in_channels"],
-            out_channels=config["out_channels"],
-            base_channels=config["base_channels"],
-            depth=config["depth"],
+        norm = config.get("norm", "group")
+        act = config.get("act", "silu")
+        group_norm_groups = config.get("group_norm_groups", 8)
+        dropout = config.get("dropout", 0.0)
+        upsample = config.get("upsample", "nearest")
+        use_residual = config.get("use_residual", True)
+        bottleneck_blocks = config.get("bottleneck_blocks", 1)
+
+        self._model = SmallUNetFull(
+            cfg=SmallUNetFullConfig(
+                in_channels=config["in_channels"],
+                out_channels=config["out_channels"],
+                base_channels=config["base_channels"],
+                depth=config["depth"],
+                norm=norm,
+                act=act,
+                group_norm_groups=group_norm_groups,
+                dropout=dropout,
+                upsample=upsample,
+                use_residual=use_residual,
+                bottleneck_blocks=bottleneck_blocks,
+            )
         )
 
         self._model.load_state_dict(checkpoint["model_state_dict"])

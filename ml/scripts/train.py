@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 
 from config.training_config import TrainingConfig, project_config
 from dataset.npz_sequence import FluidNPZSequenceDataset
-from models.small_unet import SmallUNet
+from models.small_unet_full import SmallUNetFull, SmallUNetFullConfig
 from training.trainer import Trainer
 
 
@@ -108,11 +108,20 @@ def main() -> None:
     train_loader = DataLoader(train_ds, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers)
     val_loader = DataLoader(val_ds, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers)
 
-    model = SmallUNet(
-        in_channels=config.in_channels,
-        out_channels=config.out_channels,
-        base_channels=config.base_channels,
-        depth=config.depth,
+    model = SmallUNetFull(
+        cfg=SmallUNetFullConfig(
+            in_channels=config.in_channels,
+            out_channels=config.out_channels,
+            base_channels=config.base_channels,
+            depth=config.depth,
+            norm=config.norm,
+            act=config.act,
+            group_norm_groups=config.group_norm_groups,
+            dropout=config.dropout,
+            upsample=config.upsample,
+            use_residual=config.use_residual,
+            bottleneck_blocks=config.bottleneck_blocks,
+        )
     ).to(config.device)
 
     total_params = sum(p.numel() for p in model.parameters())
