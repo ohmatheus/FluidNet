@@ -73,7 +73,7 @@ void FluidScene::onUpdate(float deltaTime)
 
     if (m_sceneState)
     {
-        m_sceneState->decayVelocityImpulses(0.9f);
+        m_sceneState->decayVelocityImpulses(0.98f);
         m_sceneState->commitSnapshot();
     }
 }
@@ -116,7 +116,8 @@ void FluidScene::onRenderUI()
 
     const char* toolNames[] = {"Emitter", "Collider", "Velocity", "Erase"};
     ImGui::Text("Current Tool: %s", toolNames[static_cast<int>(m_currentTool)]);
-    ImGui::Text("Brush Size: %d", m_brushSize);
+    ImGui::SliderInt("Paint Brush", &m_paintBrushSize, 1, 15);
+    ImGui::SliderInt("Velocity Brush", &m_velocityBrushSize, 1, 15);
     ImGui::Checkbox("Debug Overlay (O)", &m_showDebugOverlay);
     if (ImGui::IsItemEdited() && m_renderer)
     {
@@ -277,11 +278,11 @@ void FluidScene::handleMouseInput(float viewportX, float viewportY, float viewpo
         switch (m_currentTool)
         {
         case Tool::Emitter:
-            m_sceneState->paintEmitter(gridX, gridY, m_brushSize);
+            m_sceneState->paintEmitter(gridX, gridY, m_paintBrushSize);
             m_sceneState->commitSnapshot();
             break;
         case Tool::Collider:
-            m_sceneState->paintCollider(gridX, gridY, m_brushSize);
+            m_sceneState->paintCollider(gridX, gridY, m_paintBrushSize);
             m_sceneState->commitSnapshot();
             break;
         case Tool::Velocity:
@@ -292,7 +293,7 @@ void FluidScene::handleMouseInput(float viewportX, float viewportY, float viewpo
 
                 float velocityScale = 0.5f;
                 m_sceneState->paintVelocityImpulse(gridX, gridY, deltaX * velocityScale,
-                                                   deltaY * velocityScale, m_brushSize);
+                                                   deltaY * velocityScale, m_velocityBrushSize);
                 m_sceneState->commitSnapshot();
             }
             m_mousePressed = true;
@@ -300,14 +301,14 @@ void FluidScene::handleMouseInput(float viewportX, float viewportY, float viewpo
             m_prevMouseGridY = gridY;
             break;
         case Tool::Erase:
-            m_sceneState->erase(gridX, gridY, m_brushSize);
+            m_sceneState->erase(gridX, gridY, m_paintBrushSize);
             m_sceneState->commitSnapshot();
             break;
         }
     }
     else if (rightButton)
     {
-        m_sceneState->erase(gridX, gridY, m_brushSize);
+        m_sceneState->erase(gridX, gridY, m_paintBrushSize);
         m_sceneState->commitSnapshot();
         m_mousePressed = false;
         m_prevMouseGridX = -1;

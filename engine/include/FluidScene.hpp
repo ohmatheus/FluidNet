@@ -59,7 +59,8 @@ private:
     float m_simulationFPS{0.0f};
 
     Tool m_currentTool{Tool::Emitter};
-    int m_brushSize{2};
+    int m_paintBrushSize{2};
+    int m_velocityBrushSize{4};
 
     int m_prevMouseGridX{-1};
     int m_prevMouseGridY{-1};
