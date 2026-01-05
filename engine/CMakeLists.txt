@@ -85,6 +85,7 @@ set(SOURCES
     src/FluidScene.cpp
     src/Simulation.cpp
     src/SimulationBuffer.cpp
+    src/SceneState.cpp
     src/Renderer.cpp
     src/ModelRegistry.cpp
     src/GLLoader.cpp

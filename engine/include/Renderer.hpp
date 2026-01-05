@@ -23,6 +23,9 @@ public:
 
     void render(const SimulationBuffer& state);
 
+    void setDebugOverlay(bool enabled);
+    void uploadSceneMasks(const std::vector<float>& emitterMask, const std::vector<float>& colliderMask, int gridRes);
+
     GLuint getFramebufferTexture() const
     {
         return m_framebufferTexture;
@@ -46,8 +49,11 @@ private:
     GLuint m_vao{0};
     GLuint m_vbo{0};
     GLuint m_shaderProgram{0};
+    GLuint m_debugShaderProgram{0};
     GLuint m_velocityTexture{0};
     GLuint m_densityTexture{0};
+    GLuint m_emitterTexture{0};
+    GLuint m_colliderTexture{0};
 
     GLuint m_framebuffer{0};
     GLuint m_framebufferTexture{0};
@@ -55,6 +61,7 @@ private:
     int m_fbHeight{512};
 
     bool m_initialized{false};
+    bool m_showDebugOverlay{true};
 };
 
 }

@@ -190,10 +190,18 @@ void Engine::renderViewportWindow_()
                 {
                     ImVec2 mousePos = ImGui::GetMousePos();
                     ImVec2 imageMin = ImGui::GetItemRectMin();
+                    ImVec2 imageMax = ImGui::GetItemRectMax();
                     ImVec2 relativePos = ImVec2(mousePos.x - imageMin.x, mousePos.y - imageMin.y);
+                    ImVec2 imageSize = ImVec2(imageMax.x - imageMin.x, imageMax.y - imageMin.y);
 
-                    // TODO: Forward relativePos to simulation input handling
-                    // Example: fluidScene->handleMouseInput(relativePos.x, relativePos.y);
+                    bool leftButton = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+                    bool rightButton = ImGui::IsMouseDown(ImGuiMouseButton_Right);
+
+                    fluidScene->handleMouseInput(
+                        relativePos.x, relativePos.y,
+                        imageSize.x, imageSize.y,
+                        leftButton, rightButton
+                    );
                 }
             }
         }

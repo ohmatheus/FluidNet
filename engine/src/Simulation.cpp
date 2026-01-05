@@ -1,71 +1,10 @@
 #include "Simulation.hpp"
 #include "Config.hpp"
+#include "SceneState.hpp"
 #include <GLFW/glfw3.h>
 #include <chrono>
 #include <filesystem>
 #include <iostream>
-
-namespace
-{
-void setupEmitterMask(std::vector<float>& emitterMask, int gridRes)
-{
-    const size_t planeSize = static_cast<size_t>(gridRes) * static_cast<size_t>(gridRes);
-    std::fill(emitterMask.begin(), emitterMask.end(), 0.0f);
-
-    const int radius = 10;
-    const int centerX = gridRes / 2;
-    const int centerY = gridRes / 2 + 50;
-    const int radiusSq = radius * radius;
-
-    for (int y = 0; y < gridRes; ++y)
-    {
-        const int dy = y - centerY;
-        for (int x = 0; x < gridRes; ++x)
-        {
-            const int dx = x - centerX;
-            const int distSq = dx * dx + dy * dy;
-            if (distSq <= radiusSq)
-            {
-                const size_t idx =
-                    static_cast<size_t>(y) * static_cast<size_t>(gridRes) + static_cast<size_t>(x);
-                emitterMask[idx] = 1.0f;
-            }
-        }
-    }
-}
-
-void setupColliderMask(std::vector<float>& colliderMask, int gridRes)
-{
-    const size_t planeSize = static_cast<size_t>(gridRes) * static_cast<size_t>(gridRes);
-    std::fill(colliderMask.begin(), colliderMask.end(), 0.0f);
-
-    const int colliderWidth = 40;
-    const int colliderHeight = 8;
-    const int centerX = gridRes / 2;
-    const int centerY = gridRes / 2 + 20;
-
-    const int xStart = centerX - colliderWidth / 2;
-    const int xEnd = centerX + colliderWidth / 2;
-    const int yStart = centerY - colliderHeight / 2;
-    const int yEnd = centerY + colliderHeight / 2;
-
-    for (int y = yStart; y < yEnd; ++y)
-    {
-        if (y < 0 || y >= gridRes)
-            continue;
-
-        for (int x = xStart; x < xEnd; ++x)
-        {
-            if (x < 0 || x >= gridRes)
-                continue;
-
-            const size_t idx =
-                static_cast<size_t>(y) * static_cast<size_t>(gridRes) + static_cast<size_t>(x);
-            colliderMask[idx] = 1.0f;
-        }
-    }
-}
-} // namespace
 
 namespace FluidNet
 {
@@ -213,6 +152,11 @@ float Simulation::getAvgComputeTimeMs() const
     return m_avgComputeTimeMs.load(std::memory_order_acquire);
 }
 
+void Simulation::setSceneSnapshot(const std::atomic<SceneMaskSnapshot*>* snapshot)
+{
+    m_sceneSnapshotPtr = snapshot;
+}
+
 void Simulation::workerLoop_()
 {
     using Clock = std::chrono::high_resolution_clock;
@@ -226,11 +170,17 @@ void Simulation::workerLoop_()
             SimulationBuffer* frontBuf = m_front.load(std::memory_order_acquire);
             SimulationBuffer* backBuf = (frontBuf == &m_bufferA) ? &m_bufferB : &m_bufferA;
 
+            const SceneMaskSnapshot* sceneSnapshot = nullptr;
+            if (m_sceneSnapshotPtr)
+            {
+                sceneSnapshot = m_sceneSnapshotPtr->load(std::memory_order_acquire);
+            }
+
             // frontBuf:  density(t), vel(t)
             // backBuf:   density(t-1)
             // After this call, backBuf will contain t+1
             auto inferenceStart = Clock::now();
-            runInferenceStep_(frontBuf, backBuf);
+            runInferenceStep_(frontBuf, backBuf, sceneSnapshot);
             auto inferenceEnd = Clock::now();
 
             m_front.store(backBuf, std::memory_order_release);
@@ -264,7 +214,7 @@ void Simulation::workerLoop_()
     }
 }
 
-void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer* backBuf)
+void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer* backBuf, const SceneMaskSnapshot* sceneSnapshot)
 {
     int inputChannels = FluidNet::Config::getInstance().getInputChannels();
 
@@ -272,14 +222,6 @@ void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer*
     {
         const int gridRes = frontBuf->gridResolution;
         const size_t planeSize = static_cast<size_t>(gridRes) * static_cast<size_t>(gridRes);
-
-        // writing front buffer from this thread is not ok
-        // data race !
-        // todo - find workaround
-        // -> don't add emiter mask in buffer, have another emitter_mask buffer directly injected to
-        // simulation input
-        setupEmitterMask(frontBuf->emitterMask, gridRes);
-        setupColliderMask(frontBuf->colliderMask, gridRes);
 
         const int64_t inputShape[] = {1, inputChannels, gridRes, gridRes};
         const size_t inputSize = inputChannels * planeSize;
@@ -292,10 +234,28 @@ void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer*
         std::memcpy(&inputData[2 * planeSize], frontBuf->velocityY.data(),
                     planeSize * sizeof(float));
         std::memcpy(&inputData[3 * planeSize], backBuf->density.data(), planeSize * sizeof(float));
-        std::memcpy(&inputData[4 * planeSize], frontBuf->emitterMask.data(),
-                    planeSize * sizeof(float));
-        std::memcpy(&inputData[5 * planeSize], frontBuf->colliderMask.data(),
-                    planeSize * sizeof(float));
+
+        if (sceneSnapshot && !sceneSnapshot->velocityImpulseX.empty() &&
+            !sceneSnapshot->velocityImpulseY.empty())
+        {
+            for (size_t i = 0; i < planeSize; ++i)
+            {
+                inputData[1 * planeSize + i] += sceneSnapshot->velocityImpulseX[i];
+                inputData[2 * planeSize + i] += sceneSnapshot->velocityImpulseY[i];
+            }
+        }
+
+        if (sceneSnapshot && !sceneSnapshot->emitterMask.empty() && !sceneSnapshot->colliderMask.empty())
+        {
+            std::memcpy(&inputData[4 * planeSize], sceneSnapshot->emitterMask.data(),
+                        planeSize * sizeof(float));
+            std::memcpy(&inputData[5 * planeSize], sceneSnapshot->colliderMask.data(),
+                        planeSize * sizeof(float));
+        }
+        else
+        {
+            std::fill(&inputData[4 * planeSize], &inputData[6 * planeSize], 0.0f);
+        }
 
         auto memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
         Ort::Value inputTensor =
