@@ -22,16 +22,29 @@ public:
 
     void paintEmitter(int gridX, int gridY, int brushSize);
     void paintCollider(int gridX, int gridY, int brushSize);
-    void paintVelocityImpulse(int gridX, int gridY, float velocityX, float velocityY, int brushSize);
+    void paintVelocityImpulse(int gridX, int gridY, float velocityX, float velocityY,
+                              int brushSize);
     void erase(int gridX, int gridY, int brushSize);
     void clear();
     void decayVelocityImpulses(float decayFactor);
     void commitSnapshot();
 
-    const std::atomic<SceneMaskSnapshot*>* getSnapshotAtomic() const { return &m_snapshotForSim; }
-    const std::vector<float>& getEmitterLayer() const { return m_emitterLayer; }
-    const std::vector<float>& getColliderLayer() const { return m_colliderLayer; }
-    int getGridResolution() const { return m_gridResolution; }
+    const std::atomic<SceneMaskSnapshot*>* getSnapshotAtomic() const
+    {
+        return &m_snapshotForSim;
+    }
+    const std::vector<float>& getEmitterLayer() const
+    {
+        return m_emitterLayer;
+    }
+    const std::vector<float>& getColliderLayer() const
+    {
+        return m_colliderLayer;
+    }
+    int getGridResolution() const
+    {
+        return m_gridResolution;
+    }
 
 private:
     std::vector<float> m_emitterLayer;

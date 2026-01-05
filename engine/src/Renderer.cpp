@@ -285,7 +285,7 @@ void Renderer::uploadToGPU_(const SimulationBuffer& state)
 }
 
 void Renderer::uploadSceneMasks(const std::vector<float>& emitterMask,
-                                 const std::vector<float>& colliderMask, int gridRes)
+                                const std::vector<float>& colliderMask, int gridRes)
 {
     if (!m_initialized)
     {

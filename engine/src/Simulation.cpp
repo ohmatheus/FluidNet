@@ -214,7 +214,8 @@ void Simulation::workerLoop_()
     }
 }
 
-void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer* backBuf, const SceneMaskSnapshot* sceneSnapshot)
+void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer* backBuf,
+                                   const SceneMaskSnapshot* sceneSnapshot)
 {
     int inputChannels = FluidNet::Config::getInstance().getInputChannels();
 
@@ -245,7 +246,8 @@ void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer*
             }
         }
 
-        if (sceneSnapshot && !sceneSnapshot->emitterMask.empty() && !sceneSnapshot->colliderMask.empty())
+        if (sceneSnapshot && !sceneSnapshot->emitterMask.empty() &&
+            !sceneSnapshot->colliderMask.empty())
         {
             std::memcpy(&inputData[4 * planeSize], sceneSnapshot->emitterMask.data(),
                         planeSize * sizeof(float));

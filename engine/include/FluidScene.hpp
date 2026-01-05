@@ -2,9 +2,9 @@
 
 #include "Renderer.hpp"
 #include "Scene.hpp"
+#include "SceneState.hpp"
 #include "Simulation.hpp"
 #include "SimulationBuffer.hpp"
-#include "SceneState.hpp"
 #include <memory>
 
 namespace FluidNet
@@ -35,8 +35,8 @@ public:
     void restart() override;
 
     void onModelChanged(const std::string& modelPath);
-    void handleMouseInput(float viewportX, float viewportY, float viewportWidth, float viewportHeight,
-                         bool leftButton, bool rightButton);
+    void handleMouseInput(float viewportX, float viewportY, float viewportWidth,
+                          float viewportHeight, bool leftButton, bool rightButton);
 
     Simulation* getSimulation() const
     {

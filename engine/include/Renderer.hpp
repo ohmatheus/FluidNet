@@ -24,7 +24,8 @@ public:
     void render(const SimulationBuffer& state);
 
     void setDebugOverlay(bool enabled);
-    void uploadSceneMasks(const std::vector<float>& emitterMask, const std::vector<float>& colliderMask, int gridRes);
+    void uploadSceneMasks(const std::vector<float>& emitterMask,
+                          const std::vector<float>& colliderMask, int gridRes);
 
     GLuint getFramebufferTexture() const
     {

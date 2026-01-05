@@ -1,7 +1,7 @@
 #pragma once
 
-#include "SimulationBuffer.hpp"
 #include "SceneState.hpp"
+#include "SimulationBuffer.hpp"
 #include <atomic>
 #include <memory>
 #include <onnxruntime_cxx_api.h>
@@ -31,7 +31,8 @@ public:
 
 private:
     void workerLoop_();
-    void runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer* backBuf, const SceneMaskSnapshot* sceneSnapshot);
+    void runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer* backBuf,
+                           const SceneMaskSnapshot* sceneSnapshot);
     void initializeOnnxSession_(const std::string& modelPath, bool useGpu);
 
     std::unique_ptr<Ort::Env> m_ortEnv;

@@ -251,8 +251,8 @@ void FluidScene::onModelChanged(const std::string& modelPath)
     }
 }
 
-void FluidScene::handleMouseInput(float viewportX, float viewportY, float viewportWidth, float viewportHeight,
-                                  bool leftButton, bool rightButton)
+void FluidScene::handleMouseInput(float viewportX, float viewportY, float viewportWidth,
+                                  float viewportHeight, bool leftButton, bool rightButton)
 {
     if (!m_sceneState)
         return;
@@ -292,7 +292,7 @@ void FluidScene::handleMouseInput(float viewportX, float viewportY, float viewpo
 
                 float velocityScale = 0.5f;
                 m_sceneState->paintVelocityImpulse(gridX, gridY, deltaX * velocityScale,
-                                                  deltaY * velocityScale, m_brushSize);
+                                                   deltaY * velocityScale, m_brushSize);
                 m_sceneState->commitSnapshot();
             }
             m_mousePressed = true;

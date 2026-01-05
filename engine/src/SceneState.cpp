@@ -36,7 +36,8 @@ void SceneState::paintCollider(int gridX, int gridY, int brushSize)
     paintCircle_(m_colliderLayer, gridX, gridY, brushSize, 1.0f);
 }
 
-void SceneState::paintVelocityImpulse(int gridX, int gridY, float velocityX, float velocityY, int brushSize)
+void SceneState::paintVelocityImpulse(int gridX, int gridY, float velocityX, float velocityY,
+                                      int brushSize)
 {
     for (int dy = -brushSize; dy <= brushSize; ++dy)
     {
@@ -98,7 +99,8 @@ void SceneState::commitSnapshot()
     m_snapshotForSim.store(snapshot);
 }
 
-void SceneState::paintCircle_(std::vector<float>& layer, int centerX, int centerY, int radius, float value)
+void SceneState::paintCircle_(std::vector<float>& layer, int centerX, int centerY, int radius,
+                              float value)
 {
     for (int dy = -radius; dy <= radius; ++dy)
     {

@@ -197,11 +197,8 @@ void Engine::renderViewportWindow_()
                     bool leftButton = ImGui::IsMouseDown(ImGuiMouseButton_Left);
                     bool rightButton = ImGui::IsMouseDown(ImGuiMouseButton_Right);
 
-                    fluidScene->handleMouseInput(
-                        relativePos.x, relativePos.y,
-                        imageSize.x, imageSize.y,
-                        leftButton, rightButton
-                    );
+                    fluidScene->handleMouseInput(relativePos.x, relativePos.y, imageSize.x,
+                                                 imageSize.y, leftButton, rightButton);
                 }
             }
         }
