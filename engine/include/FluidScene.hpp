@@ -63,6 +63,8 @@ private:
     Tool m_currentTool{Tool::Emitter};
     int m_paintBrushSize{2};
     int m_velocityBrushSize{4};
+    float m_velocityStrength{0.5f};
+    float m_velocityDecayPercent{5.0f};
 
     int m_prevMouseGridX{-1};
     int m_prevMouseGridY{-1};

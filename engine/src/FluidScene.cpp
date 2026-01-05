@@ -73,7 +73,8 @@ void FluidScene::onUpdate(float deltaTime)
 
     if (m_sceneState)
     {
-        m_sceneState->decayVelocityImpulses(0.95f);
+        float decayFactor = (100.0f - m_velocityDecayPercent) / 100.0f;
+        m_sceneState->decayVelocityImpulses(decayFactor);
         m_sceneState->commitSnapshot();
     }
 }
@@ -118,6 +119,8 @@ void FluidScene::onRenderUI()
     ImGui::Text("Current Tool: %s", toolNames[static_cast<int>(m_currentTool)]);
     ImGui::SliderInt("Paint Brush", &m_paintBrushSize, 1, 15);
     ImGui::SliderInt("Velocity Brush", &m_velocityBrushSize, 1, 15);
+    ImGui::SliderFloat("Velocity Strength", &m_velocityStrength, 0.1f, 1.0f, "%.1f");
+    ImGui::SliderFloat("Velocity Decay %", &m_velocityDecayPercent, 1.0f, 10.0f, "%.1f%%");
     ImGui::Checkbox("Debug Overlay (O)", &m_showDebugOverlay);
     if (ImGui::IsItemEdited() && m_renderer)
     {
@@ -339,9 +342,9 @@ void FluidScene::handleMouseInput(float viewportX, float viewportY, float viewpo
                 float deltaX = static_cast<float>(gridX - m_prevMouseGridX);
                 float deltaY = static_cast<float>(gridY - m_prevMouseGridY);
 
-                float velocityScale = 0.5f;
-                m_sceneState->paintVelocityImpulse(gridX, gridY, deltaX * velocityScale,
-                                                   deltaY * velocityScale, m_velocityBrushSize);
+                m_sceneState->paintVelocityImpulse(gridX, gridY, deltaX * m_velocityStrength,
+                                                   deltaY * m_velocityStrength,
+                                                   m_velocityBrushSize);
                 m_sceneState->commitSnapshot();
             }
             m_mousePressed = true;
