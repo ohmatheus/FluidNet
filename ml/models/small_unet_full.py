@@ -175,6 +175,7 @@ class SmallUNetFullConfig:
     upsample: UpsampleType = "nearest"
     use_residual: bool = False
     bottleneck_blocks: int = 1
+    output_activation: bool = True
 
 
 class SmallUNetFull(nn.Module):
@@ -261,7 +262,14 @@ class SmallUNetFull(nn.Module):
         for up, skip in zip(self.ups, reversed(skips), strict=True):
             x = cast("Up", up)(x, skip)
 
-        return cast("torch.Tensor", self.head(x))
+        x = self.head(x)
+
+        if self.cfg.output_activation:
+            density = torch.sigmoid(x[:, 0:1, :, :])
+            velocity = torch.tanh(x[:, 1:3, :, :])
+            return torch.cat([density, velocity], dim=1)
+
+        return cast("torch.Tensor", x)
 
 
 __all__ = ["SmallUNetFull", "SmallUNetFullConfig"]
