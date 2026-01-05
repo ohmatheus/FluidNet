@@ -37,6 +37,7 @@ public:
     void onModelChanged(const std::string& modelPath);
     void handleMouseInput(float viewportX, float viewportY, float viewportWidth,
                           float viewportHeight, bool leftButton, bool rightButton);
+    void togglePause();
 
     Simulation* getSimulation() const
     {
@@ -56,6 +57,7 @@ private:
     const SimulationBuffer* m_latestState{nullptr};
     bool m_showDebugInfo{true};
     bool m_showDebugOverlay{true};
+    bool m_isPaused{false};
     float m_simulationFPS{0.0f};
 
     Tool m_currentTool{Tool::Emitter};

@@ -73,7 +73,7 @@ void FluidScene::onUpdate(float deltaTime)
 
     if (m_sceneState)
     {
-        m_sceneState->decayVelocityImpulses(0.98f);
+        m_sceneState->decayVelocityImpulses(0.95f);
         m_sceneState->commitSnapshot();
     }
 }
@@ -141,6 +141,13 @@ void FluidScene::onRenderUI()
         }
     }
 
+    ImGui::SameLine();
+
+    if (ImGui::Button(m_isPaused ? "Resume (Space)" : "Pause (Space)"))
+    {
+        togglePause();
+    }
+
     ImGui::Checkbox("Show Debug Info (D)", &m_showDebugInfo);
 
     if (m_showDebugInfo && m_latestState)
@@ -170,6 +177,8 @@ void FluidScene::onRenderUI()
     ImGui::BulletText("Shift+M: Previous model");
     ImGui::BulletText("G: Toggle GPU/CPU");
     ImGui::BulletText("R: Restart simulation");
+    ImGui::BulletText("Shift+R: Clear scene");
+    ImGui::BulletText("Space: Pause/Resume");
     ImGui::BulletText("ESC: Exit");
 
     ImGui::End();
@@ -185,7 +194,19 @@ void FluidScene::onKeyPress(int key, int scancode, int action, int mods)
     switch (key)
     {
     case GLFW_KEY_R:
-        restart();
+        if (mods & GLFW_MOD_SHIFT)
+        {
+            if (m_sceneState)
+            {
+                m_sceneState->clear();
+                m_sceneState->commitSnapshot();
+                std::cout << "Scene cleared" << std::endl;
+            }
+        }
+        else
+        {
+            restart();
+        }
         break;
 
     case GLFW_KEY_G:
@@ -231,6 +252,10 @@ void FluidScene::onKeyPress(int key, int scancode, int action, int mods)
         m_currentTool = Tool::Erase;
         std::cout << "Tool: Erase" << std::endl;
         break;
+
+    case GLFW_KEY_SPACE:
+        togglePause();
+        break;
     }
 }
 
@@ -239,7 +264,30 @@ void FluidScene::restart()
     if (m_simulation)
     {
         m_simulation->restart();
+        if (!m_isPaused)
+        {
+            m_simulation->start();
+        }
         std::cout << "Simulation restarted" << std::endl;
+    }
+}
+
+void FluidScene::togglePause()
+{
+    m_isPaused = !m_isPaused;
+
+    if (m_simulation)
+    {
+        if (m_isPaused)
+        {
+            m_simulation->stop();
+            std::cout << "Simulation paused" << std::endl;
+        }
+        else
+        {
+            m_simulation->start();
+            std::cout << "Simulation resumed" << std::endl;
+        }
     }
 }
 
