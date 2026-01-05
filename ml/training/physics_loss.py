@@ -110,6 +110,19 @@ def gradient_loss(
     return loss_x + loss_y
 
 
+def emitter_spawn_loss(
+    density_pred: torch.Tensor,
+    density_current: torch.Tensor,
+    emitter_mask: torch.Tensor,
+    threshold: float = 0.01,
+) -> torch.Tensor:
+    """
+    Penalize density spawning in non-emitter regions.
+    """
+    allowed_mask = (emitter_mask > 0.01) | (density_current > threshold)
+    forbidden_density = density_pred * (~allowed_mask).float()
+    return forbidden_density.mean()
+
 class PhysicsAwareLoss(nn.Module):
     """
     Combines:
@@ -123,19 +136,23 @@ class PhysicsAwareLoss(nn.Module):
         mse_weight: float = 1.0,
         divergence_weight: float = 0.1,
         gradient_weight: float = 0.1,
+        emitter_weight: float = 0.1,
         grid_spacing: float = 1.0,
         enable_divergence: bool = True,
         enable_gradient: bool = True,
+        enable_emitter: bool = True,
     ) -> None:
         super().__init__()
 
         self.mse_weight = mse_weight
         self.divergence_weight = divergence_weight
         self.gradient_weight = gradient_weight
+        self.emitter_weight = emitter_weight
         self.grid_spacing = grid_spacing
 
         self.enable_divergence = enable_divergence
         self.enable_gradient = enable_gradient
+        self.enable_emitter = enable_emitter
 
         self.mse_loss = nn.MSELoss()
 
@@ -182,7 +199,22 @@ class PhysicsAwareLoss(nn.Module):
             )
             loss_dict["gradient"] = loss_grad.item()
 
-        total_loss = self.mse_weight * loss_mse + self.divergence_weight * loss_div + self.gradient_weight * loss_grad
+        loss_emitter = torch.tensor(0.0, device=outputs.device)
+        if self.enable_emitter and self.emitter_weight > 0:
+            density_pred_3d = outputs[:, 0:1, :, :]
+            density_current = inputs[:, 0:1, :, :]
+            emitter_mask_3d = inputs[:, 4:5, :, :]
+
+            loss_emitter = emitter_spawn_loss(density_pred_3d, density_current, emitter_mask_3d)
+
+            loss_dict["emitter"] = loss_emitter.item()
+
+        total_loss = (
+            self.mse_weight * loss_mse +
+            self.divergence_weight * loss_div +
+            self.gradient_weight * loss_grad +
+            self.emitter_weight * loss_emitter
+        )
 
         loss_dict["total"] = total_loss.item()
 
