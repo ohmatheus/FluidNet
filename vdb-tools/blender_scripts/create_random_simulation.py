@@ -54,12 +54,12 @@ def create_fluid_domain(resolution: int) -> Any:
 
     domain_settings.use_collision_border_front = True
     domain_settings.use_collision_border_back = True
-    domain_settings.use_collision_border_top = True
-    domain_settings.use_collision_border_bottom = True
+    domain_settings.use_collision_border_top = False
+    domain_settings.use_collision_border_bottom = False
     domain_settings.use_collision_border_left = False
     domain_settings.use_collision_border_right = False
 
-    domain_settings.vorticity = 0.1
+    domain_settings.vorticity = 0.05
     domain_settings.beta = 0.0
     domain_settings.delete_in_obstacle = True
 
@@ -109,7 +109,8 @@ def clamp_to_bounds(position: tuple, margin: float = 0.1) -> tuple:
 
 def animate_emitter(obj: Any, mesh_type: str, frames: int) -> None:
     start_pos = obj.location.copy()
-    max_displacement = random.uniform(0.2, 0.6)
+    #max_displacement = random.uniform(0.2, 0.6)
+    max_displacement = 0.0000001 #random.uniform(0.0001, 0.0005)
 
     middle_x = start_pos.x + random.uniform(-max_displacement, max_displacement)
     middle_z = start_pos.z + random.uniform(-max_displacement, max_displacement)
@@ -132,21 +133,21 @@ def animate_emitter(obj: Any, mesh_type: str, frames: int) -> None:
         for keyframe in fcurve.keyframe_points:
             keyframe.interpolation = "BEZIER"
 
-    if mesh_type == "CUBE":
-        start_rot = obj.rotation_euler[1]
+    #if mesh_type == "CUBE":
+    #    start_rot = obj.rotation_euler[1]
 
-        rot_direction = random.choice([-1, 1])
-        middle_rot = start_rot + rot_direction * random.uniform(1.57, 3.14)
-        end_rot = middle_rot + rot_direction * random.uniform(1.57, 3.14)
+    #    rot_direction = random.choice([-1, 1])
+    #    middle_rot = start_rot + rot_direction * random.uniform(1.57, 3.14)
+    #    end_rot = middle_rot + rot_direction * random.uniform(1.57, 3.14)
 
-        obj.rotation_euler[1] = start_rot
-        obj.keyframe_insert(data_path="rotation_euler", index=1, frame=1)
+    #    obj.rotation_euler[1] = start_rot
+    #    obj.keyframe_insert(data_path="rotation_euler", index=1, frame=1)
 
-        obj.rotation_euler[1] = middle_rot
-        obj.keyframe_insert(data_path="rotation_euler", index=1, frame=frames // 2)
+    #    obj.rotation_euler[1] = middle_rot
+    #    obj.keyframe_insert(data_path="rotation_euler", index=1, frame=frames // 2)
 
-        obj.rotation_euler[1] = end_rot
-        obj.keyframe_insert(data_path="rotation_euler", index=1, frame=frames)
+    #    obj.rotation_euler[1] = end_rot
+    #    obj.keyframe_insert(data_path="rotation_euler", index=1, frame=frames)
 
 
 def create_shape_component(position: tuple, scale: tuple, parent: Any, name: str) -> Any:
@@ -174,20 +175,20 @@ def create_complex_shape(
     cubes = []
 
     if shape_type == "T":
-        cubes.append(create_shape_component((0, 0, 0), (0.1, 0.05, 0.6), parent, f"{role}_{index}_T_Vert"))
-        cubes.append(create_shape_component((0, 0, 0.2), (0.6, 0.05, 0.1), parent, f"{role}_{index}_T_Horiz"))
+        cubes.append(create_shape_component((0, 0, 0), (0.1, 0.2, 0.6), parent, f"{role}_{index}_T_Vert"))
+        cubes.append(create_shape_component((0, 0, 0.2), (0.6, 0.2, 0.1), parent, f"{role}_{index}_T_Horiz"))
     elif shape_type == "L":
-        cubes.append(create_shape_component((0, 0, 0), (0.1, 0.05, 0.5), parent, f"{role}_{index}_L_Vert"))
-        cubes.append(create_shape_component((0.2, 0, -0.2), (0.5, 0.05, 0.1), parent, f"{role}_{index}_L_Horiz"))
+        cubes.append(create_shape_component((0, 0, 0), (0.1, 0.2, 0.5), parent, f"{role}_{index}_L_Vert"))
+        cubes.append(create_shape_component((0.2, 0, -0.2), (0.5, 0.2, 0.1), parent, f"{role}_{index}_L_Horiz"))
     elif shape_type == "cross":
-        cubes.append(create_shape_component((0, 0, 0.3), (0.1, 0.05, 0.3), parent, f"{role}_{index}_Cross_N"))
-        cubes.append(create_shape_component((0, 0, -0.3), (0.1, 0.05, 0.3), parent, f"{role}_{index}_Cross_S"))
-        cubes.append(create_shape_component((0.3, 0, 0), (0.3, 0.05, 0.1), parent, f"{role}_{index}_Cross_E"))
-        cubes.append(create_shape_component((-0.3, 0, 0), (0.3, 0.05, 0.1), parent, f"{role}_{index}_Cross_W"))
+        cubes.append(create_shape_component((0, 0, 0.3), (0.1, 0.2, 0.3), parent, f"{role}_{index}_Cross_N"))
+        cubes.append(create_shape_component((0, 0, -0.3), (0.1, 0.2, 0.3), parent, f"{role}_{index}_Cross_S"))
+        cubes.append(create_shape_component((0.3, 0, 0), (0.3, 0.2, 0.1), parent, f"{role}_{index}_Cross_E"))
+        cubes.append(create_shape_component((-0.3, 0, 0), (0.3, 0.2, 0.1), parent, f"{role}_{index}_Cross_W"))
     elif shape_type == "stairs":
-        cubes.append(create_shape_component((-0.4, 0, -0.3), (0.3, 0.05, 0.1), parent, f"{role}_{index}_Stair_1"))
-        cubes.append(create_shape_component((-0.1, 0, -0.1), (0.3, 0.05, 0.1), parent, f"{role}_{index}_Stair_2"))
-        cubes.append(create_shape_component((0.2, 0, 0.1), (0.3, 0.05, 0.1), parent, f"{role}_{index}_Stair_3"))
+        cubes.append(create_shape_component((-0.4, 0, -0.3), (0.3, 0.2, 0.1), parent, f"{role}_{index}_Stair_1"))
+        cubes.append(create_shape_component((-0.1, 0, -0.1), (0.3, 0.2, 0.1), parent, f"{role}_{index}_Stair_2"))
+        cubes.append(create_shape_component((0.2, 0, 0.1), (0.3, 0.2, 0.1), parent, f"{role}_{index}_Stair_3"))
 
     parent.scale = (overall_scale, overall_scale, overall_scale)
 
@@ -200,14 +201,22 @@ def create_complex_shape(
     return [parent] + cubes
 
 
-def create_random_meshes(seed: int, frames: int) -> list[dict[str, Any]]:
+def create_random_meshes(seed: int, frames: int, collider_mode: str = "medium") -> list[dict[str, Any]]:
     random.seed(seed)
 
-    num_emitters = random.randint(1, 3)
-    num_colliders = random.randint(1, 3)
+    # Determine collider count based on mode
+    if collider_mode == "simple":
+        num_colliders = 0
+    elif collider_mode == "medium":
+        num_colliders = random.randint(1, 2)
+    else:  # complex
+        num_colliders = random.randint(2, 3)
+
+    # Always 1-2 emitters (max 2)
+    num_emitters = random.randint(1, 2)
     num_meshes = num_emitters + num_colliders
 
-    print(f"Creating {num_meshes} random meshes ({num_emitters} emitters, {num_colliders} colliders, seed={seed})")
+    print(f"Creating {num_meshes} random meshes ({num_emitters} emitters, {num_colliders} colliders, mode={collider_mode}, seed={seed})")
 
     meshes_info = []
 
@@ -222,21 +231,57 @@ def create_random_meshes(seed: int, frames: int) -> list[dict[str, Any]]:
     random.shuffle(collider_types)
     collider_type_iter = iter(collider_types)
 
-    for i, role in enumerate(roles):
-        x = random.uniform(-1, 1)
-        if role == "Emitter":
-            z = random.uniform(-1.0, 0.33)
-        else:
-            z = random.uniform(-0.33, 1.0)
+    # Alignment strategy for colliders: choose axis and base position
+    align_axis = random.choice(["x", "z"])  # Which axis to align along
+    if align_axis == "x":
+        # Align colliders along X axis (varying X, fixed Z with small variation)
+        align_base_z = random.uniform(0.0, 0.5)  # Middle to upper region
+    else:
+        # Align colliders along Z axis (varying Z, fixed X with small variation)
+        align_base_x = random.uniform(-0.5, 0.5)  # Center region
 
-        position = (x, 0, z)
+    collider_index = 0
+
+    # First pass: place all emitters and record positions
+    emitter_positions = []
+
+    for i, role in enumerate(roles):
+        if role == "Emitter":
+            x = random.uniform(-1, 1)
+            z = random.uniform(-1.0, -0.1)
+            position = (x, 0, z)
+            emitter_positions.append(position)
+        else:
+            if len(emitter_positions) > 0:
+                emitter_center_x = sum(p[0] for p in emitter_positions) / len(emitter_positions)
+                emitter_center_z = sum(p[2] for p in emitter_positions) / len(emitter_positions)
+
+                # Place colliders directly above emitter center (tight alignment for collision)
+                z = emitter_center_z + 0.4 + (collider_index * 0.35)
+                x = emitter_center_x + random.uniform(-0.05, 0.05)
+            else:
+                if align_axis == "x":
+                    x = -0.8 + (collider_index * 1.6 / max(1, num_colliders - 1)) if num_colliders > 1 else 0.0
+                    x += random.uniform(-0.1, 0.1)
+                    z = align_base_z + random.uniform(-0.05, 0.05)
+                else:
+                    z = -0.2 + (collider_index * 1.0 / max(1, num_colliders - 1)) if num_colliders > 1 else 0.3
+                    z += random.uniform(-0.1, 0.1)
+                    x = align_base_x + random.uniform(-0.05, 0.05)
+
+            collider_index += 1
+            position = (x, 0, z)
+
+        # position = (x, 0, z)  # Moved up into if/else blocks
 
         if role == "Emitter":
             mesh_type = random.choice(["CUBE", "SPHERE"])
 
             if mesh_type == "CUBE":
-                scale_x = random.uniform(0.1, 0.3)
-                scale_z = random.uniform(0.1, 0.3)
+                # Reduce max scale - was 0.3, now mode-dependent
+                max_scale = 0.15 if collider_mode == "simple" else 0.2
+                scale_x = random.uniform(0.1, max_scale)
+                scale_z = random.uniform(0.1, max_scale)
 
                 bpy.ops.mesh.primitive_cube_add(location=position)
                 obj = bpy.context.active_object
@@ -245,13 +290,27 @@ def create_random_meshes(seed: int, frames: int) -> list[dict[str, Any]]:
                 obj.rotation_euler = (0, rotation_y, 0)
 
                 obj.scale = (scale_x, 0.1, scale_z)
+
+                # For simple scenes with large emitters, center at bottom
+                if collider_mode == "simple" and (scale_x > 0.12 or scale_z > 0.12):
+                    pos_x = random.uniform(-0.6, 0.6)
+                    position = (pos_x, 0, -0.75)
+                    obj.location = position
             else:
-                uniform_scale = random.uniform(0.1, 0.3)
+                # Reduce max scale - was 0.3, now mode-dependent
+                max_scale = 0.15 if collider_mode == "simple" else 0.2
+                uniform_scale = random.uniform(0.1, max_scale)
 
                 bpy.ops.mesh.primitive_uv_sphere_add(location=position)
                 obj = bpy.context.active_object
 
                 obj.scale = (uniform_scale, uniform_scale, uniform_scale)
+
+                # For simple scenes with large emitters, center at bottom
+                if collider_mode == "simple" and uniform_scale > 0.12:
+                    pos_x = random.uniform(-0.6, 0.6)
+                    position = (pos_x, 0, -0.75)
+                    obj.location = position
 
             obj.name = f"{role}_{i + 1}"
             obj.animation_data_create()
@@ -286,8 +345,8 @@ def create_random_meshes(seed: int, frames: int) -> list[dict[str, Any]]:
                 mesh_type = random.choice(["CUBE", "SPHERE"])
 
                 if mesh_type == "CUBE":
-                    scale_x = random.uniform(0.1, 0.3)
-                    scale_z = random.uniform(0.1, 0.3)
+                    scale_x = random.uniform(0.08, 0.18)
+                    scale_z = random.uniform(0.08, 0.18)
 
                     bpy.ops.mesh.primitive_cube_add(location=position)
                     obj = bpy.context.active_object
@@ -297,7 +356,7 @@ def create_random_meshes(seed: int, frames: int) -> list[dict[str, Any]]:
 
                     obj.scale = (scale_x, 0.1, scale_z)
                 else:
-                    uniform_scale = random.uniform(0.1, 0.3)
+                    uniform_scale = random.uniform(0.08, 0.18)
 
                     bpy.ops.mesh.primitive_uv_sphere_add(location=position)
                     obj = bpy.context.active_object
@@ -331,7 +390,7 @@ def create_random_meshes(seed: int, frames: int) -> list[dict[str, Any]]:
 
             else:
                 shape_type = random.choice(["T", "L", "cross", "stairs"])
-                overall_scale = random.uniform(0.5, 1.0)
+                overall_scale = random.uniform(0.3, 0.6)
                 rotation_y = random.uniform(0, 360) * (3.14159 / 180)
 
                 objects = create_complex_shape(shape_type, position, role, overall_scale, rotation_y, i + 1)
@@ -456,7 +515,7 @@ def main() -> None:
 
         create_fresh_scene()
         domain = create_fluid_domain(params["resolution"])
-        meshes_info = create_random_meshes(params["seed"], params["frames"])
+        meshes_info = create_random_meshes(params["seed"], params["frames"], params.get("collider_mode", "medium"))
         bake_and_export(domain, params, meshes_info)
 
         print("\nSUCCESS\n")
