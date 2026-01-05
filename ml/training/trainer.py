@@ -42,14 +42,19 @@ class Trainer:
         self.config = config.model_copy()
         self.device = device
 
+        self.gradient_clip_norm = config.gradient_clip_norm
+        self.gradient_clip_enabled = config.gradient_clip_enabled
+
         self.optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
         self.criterion = PhysicsAwareLoss(
             mse_weight=config.physics_loss.mse_weight,
             divergence_weight=config.physics_loss.divergence_weight,
             gradient_weight=config.physics_loss.gradient_weight,
+            emitter_weight=config.physics_loss.emitter_weight,
             grid_spacing=config.physics_loss.grid_spacing,
             enable_divergence=config.physics_loss.enable_divergence,
             enable_gradient=config.physics_loss.enable_gradient,
+            enable_emitter=config.physics_loss.enable_emitter,
         )
 
         self.scaler = GradScaler("cuda") if config.amp_enabled and device == "cuda" else None
@@ -91,6 +96,10 @@ class Trainer:
             self.history["train_gradient"] = []
             self.history["val_gradient"] = []
 
+        if self.config.physics_loss.enable_emitter:
+            self.history["train_emitter"] = []
+            self.history["val_emitter"] = []
+
     def _create_scheduler(self) -> Any:
         if self.config.lr_scheduler_type == "plateau":
             return ReduceLROnPlateau(
@@ -122,31 +131,43 @@ class Trainer:
 
         pbar = tqdm(self.train_loader, desc="Training", leave=False)
         for inputs, targets in pbar:
-            # Move data to device
             inputs = inputs.to(self.device, non_blocking=True)
             targets = targets.to(self.device, non_blocking=True)
 
             self.optimizer.zero_grad()
 
-            # Forward pass with AMP
+            # AMP
             if self.scaler is not None:
                 with autocast(device_type=self.device):
                     outputs = self.model(inputs)
                     loss, loss_dict = self.criterion(outputs, targets, inputs)
 
-                # Backward pass with gradient scaling
                 self.scaler.scale(loss).backward()
+
+                if self.gradient_clip_enabled:
+                    self.scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(),
+                        self.gradient_clip_norm
+                    )
+
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
             else:
                 outputs = self.model(inputs)
                 loss, loss_dict = self.criterion(outputs, targets, inputs)
                 loss.backward()
+
+                if self.gradient_clip_enabled:
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(),
+                        self.gradient_clip_norm
+                    )
+
                 self.optimizer.step()
 
             num_batches += 1
 
-            # Accumulate individual loss components
             for key, value in loss_dict.items():
                 if key not in loss_accumulators:
                     loss_accumulators[key] = 0.0
@@ -176,7 +197,6 @@ class Trainer:
 
                 num_batches += 1
 
-                # Accumulate individual loss components
                 for key, value in loss_dict.items():
                     if key not in loss_accumulators:
                         loss_accumulators[key] = 0.0
@@ -402,7 +422,8 @@ class Trainer:
             print(
                 f"  Train: MSE={train_losses.get('mse', 0):.6f}, "
                 f"Div={train_losses.get('divergence', 0):.6f}, "
-                f"Grad={train_losses.get('gradient', 0):.6f}"
+                f"Grad={train_losses.get('gradient', 0):.6f}, "
+                f"Emitter={train_losses.get('emitter', 0):.6f}"
             )
 
             if self.scheduler is not None:
