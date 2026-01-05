@@ -84,13 +84,11 @@ class PyTorchBackend(InferenceBackend):
         if self._model is None:
             raise RuntimeError("Model not loaded. Call load_model first.")
 
-        # Convert numpy to torch, preserving device placement
         input_tensor = torch.from_numpy(input_data).float().to(self._device)
 
         with torch.no_grad():
             output_tensor = self._model(input_tensor)
 
-        # Convert back to numpy and move to CPU
         return cast("NDArray[np.float32]", output_tensor.cpu().numpy())
 
     @property
@@ -122,7 +120,6 @@ class ONNXBackend(InferenceBackend):
         session = ort.InferenceSession(str(model_path), sess_options=ort.SessionOptions(), providers=providers)
         self._session = session
 
-        # Get input and output names
         self._input_name = session.get_inputs()[0].name
         self._output_name = session.get_outputs()[0].name
 

@@ -127,10 +127,11 @@ def _create_fake_sample(
 
     # ---------------------------
     # Randomly choose between zeros and ones to avoid collider/density bias (per-sequence randomization)
-    collider_value = np.random.choice([0.0, 1.0])
-    collider = np.full((T, H, W), collider_value, dtype=np.float32)
+    #collider_value = np.random.choice([0.0, 1.0])
+    #collider = np.full((T, H, W), collider_value, dtype=np.float32)
 
     # collider = np.ones((T, H, W), dtype=np.float32)
+    collider = np.zeros((T, H, W), dtype=np.float32)
     # ---------------------------
 
     # Extract time slices
