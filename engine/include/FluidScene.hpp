@@ -2,6 +2,7 @@
 
 #include "Renderer.hpp"
 #include "Scene.hpp"
+#include "SceneState.hpp"
 #include "Simulation.hpp"
 #include "SimulationBuffer.hpp"
 #include <memory>
@@ -10,6 +11,14 @@ namespace FluidNet
 {
 
 class ModelRegistry;
+
+enum class Tool
+{
+    Emitter,
+    Collider,
+    Velocity,
+    Erase
+};
 
 class FluidScene final : public Scene
 {
@@ -26,6 +35,9 @@ public:
     void restart() override;
 
     void onModelChanged(const std::string& modelPath);
+    void handleMouseInput(float viewportX, float viewportY, float viewportWidth,
+                          float viewportHeight, bool leftButton, bool rightButton);
+    void togglePause();
 
     Simulation* getSimulation() const
     {
@@ -40,10 +52,23 @@ public:
 private:
     std::unique_ptr<Simulation> m_simulation;
     std::unique_ptr<Renderer> m_renderer;
+    std::unique_ptr<SceneState> m_sceneState;
 
     const SimulationBuffer* m_latestState{nullptr};
     bool m_showDebugInfo{true};
+    bool m_showDebugOverlay{true};
+    bool m_isPaused{false};
     float m_simulationFPS{0.0f};
+
+    Tool m_currentTool{Tool::Emitter};
+    int m_paintBrushSize{2};
+    int m_velocityBrushSize{4};
+    float m_velocityStrength{0.5f};
+    float m_velocityDecayPercent{5.0f};
+
+    int m_prevMouseGridX{-1};
+    int m_prevMouseGridY{-1};
+    bool m_mousePressed{false};
 
     ModelRegistry* m_modelRegistry{nullptr};
 };

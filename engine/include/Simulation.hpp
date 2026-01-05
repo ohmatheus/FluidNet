@@ -1,5 +1,6 @@
 #pragma once
 
+#include "SceneState.hpp"
 #include "SimulationBuffer.hpp"
 #include <atomic>
 #include <memory>
@@ -26,9 +27,12 @@ public:
     const SimulationBuffer* getLatestState() const;
     float getAvgComputeTimeMs() const;
 
+    void setSceneSnapshot(const std::atomic<SceneMaskSnapshot*>* snapshot);
+
 private:
     void workerLoop_();
-    void runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer* backBuf);
+    void runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer* backBuf,
+                           const SceneMaskSnapshot* sceneSnapshot);
     void initializeOnnxSession_(const std::string& modelPath, bool useGpu);
 
     std::unique_ptr<Ort::Env> m_ortEnv;
@@ -46,6 +50,8 @@ private:
     bool m_useGpu{true};
     std::string m_currentModelPath;
     float m_targetStepTime{0.0f};
+
+    const std::atomic<SceneMaskSnapshot*>* m_sceneSnapshotPtr{nullptr};
 
     // Timing metrics
     std::atomic<float> m_avgComputeTimeMs{0.0f};

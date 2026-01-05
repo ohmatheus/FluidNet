@@ -53,6 +53,8 @@ void Renderer::initialize()
 
         m_velocityTexture = createTexture2D_(GL_RG32F);
         m_densityTexture = createTexture2D_(GL_R32F);
+        m_emitterTexture = createTexture2D_(GL_R32F);
+        m_colliderTexture = createTexture2D_(GL_R32F);
 
         setupFramebuffer_();
 
@@ -72,6 +74,12 @@ void Renderer::shutdown()
     {
         FluidNet::GL::glDeleteProgram(m_shaderProgram);
         m_shaderProgram = 0;
+    }
+
+    if (m_debugShaderProgram)
+    {
+        FluidNet::GL::glDeleteProgram(m_debugShaderProgram);
+        m_debugShaderProgram = 0;
     }
 
     if (m_vao)
@@ -96,6 +104,18 @@ void Renderer::shutdown()
     {
         glDeleteTextures(1, &m_densityTexture);
         m_densityTexture = 0;
+    }
+
+    if (m_emitterTexture)
+    {
+        glDeleteTextures(1, &m_emitterTexture);
+        m_emitterTexture = 0;
+    }
+
+    if (m_colliderTexture)
+    {
+        glDeleteTextures(1, &m_colliderTexture);
+        m_colliderTexture = 0;
     }
 
     if (m_framebuffer)
@@ -192,15 +212,21 @@ void Renderer::compileShaders_()
     std::filesystem::path shaderDir = Paths::getShaderDir();
     std::filesystem::path vertPath = shaderDir / "fluid.vert";
     std::filesystem::path fragPath = shaderDir / "fluid.frag";
+    std::filesystem::path debugFragPath = shaderDir / "fluid_debug.frag";
 
     std::string vertexShaderStr = readShaderFile(vertPath.string());
     std::string fragmentShaderStr = readShaderFile(fragPath.string());
+    std::string debugFragmentShaderStr = readShaderFile(debugFragPath.string());
 
     GLuint vertexShader = compileShader_(GL_VERTEX_SHADER, vertexShaderStr.c_str(), "Vertex");
     GLuint fragmentShader =
         compileShader_(GL_FRAGMENT_SHADER, fragmentShaderStr.c_str(), "Fragment");
+    GLuint debugFragmentShader =
+        compileShader_(GL_FRAGMENT_SHADER, debugFragmentShaderStr.c_str(), "Debug Fragment");
 
     m_shaderProgram = linkShaderProgram_(vertexShader, fragmentShader);
+
+    m_debugShaderProgram = linkShaderProgram_(vertexShader, debugFragmentShader);
 
     FluidNet::GL::glDeleteShader(vertexShader);
     FluidNet::GL::glDeleteShader(fragmentShader);
@@ -258,6 +284,28 @@ void Renderer::uploadToGPU_(const SimulationBuffer& state)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, res, res, 0, GL_RED, GL_FLOAT, densityVis.data());
 }
 
+void Renderer::uploadSceneMasks(const std::vector<float>& emitterMask,
+                                const std::vector<float>& colliderMask, int gridRes)
+{
+    if (!m_initialized)
+    {
+        return;
+    }
+
+    glBindTexture(GL_TEXTURE_2D, m_emitterTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, gridRes, gridRes, 0, GL_RED, GL_FLOAT,
+                 emitterMask.data());
+
+    glBindTexture(GL_TEXTURE_2D, m_colliderTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, gridRes, gridRes, 0, GL_RED, GL_FLOAT,
+                 colliderMask.data());
+}
+
+void Renderer::setDebugOverlay(bool enabled)
+{
+    m_showDebugOverlay = enabled;
+}
+
 void Renderer::render(const SimulationBuffer& state)
 {
     if (!m_initialized)
@@ -276,13 +324,29 @@ void Renderer::render(const SimulationBuffer& state)
     glClearColor(0, 0.3, 0.5, 1);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    FluidNet::GL::glUseProgram(m_shaderProgram);
+    GLuint activeProgram = m_showDebugOverlay ? m_debugShaderProgram : m_shaderProgram;
+    FluidNet::GL::glUseProgram(activeProgram);
 
     // Bind density texture
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_densityTexture);
-    FluidNet::GL::glUniform1i(FluidNet::GL::glGetUniformLocation(m_shaderProgram, "densityTexture"),
+    FluidNet::GL::glUniform1i(FluidNet::GL::glGetUniformLocation(activeProgram, "densityTexture"),
                               0);
+
+    if (m_showDebugOverlay)
+    {
+        // Bind emitter texture
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, m_emitterTexture);
+        FluidNet::GL::glUniform1i(
+            FluidNet::GL::glGetUniformLocation(activeProgram, "emitterTexture"), 1);
+
+        // Bind collider texture
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, m_colliderTexture);
+        FluidNet::GL::glUniform1i(
+            FluidNet::GL::glGetUniformLocation(activeProgram, "colliderTexture"), 2);
+    }
 
     FluidNet::GL::glBindVertexArray(m_vao);
     glDrawArrays(GL_TRIANGLES, 0, 6);
