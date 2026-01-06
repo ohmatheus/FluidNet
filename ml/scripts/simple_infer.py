@@ -198,7 +198,7 @@ def main() -> None:
     print(f"\nStarting autoregressive rollout for {args.num_frames} frames...")
     print("Emitter mask: binary circle (1 inside, 0 outside) - static for all frames")
     print("Collider mask: binary rectangle (1 inside, 0 outside) - static for all frames")
-    print(f"Initial density: 1.0 in emitter (excluding collider region), 0.0 elsewhere")
+    print("Initial density: 1.0 in emitter (excluding collider region), 0.0 elsewhere")
 
     density_frames = []
 
@@ -239,8 +239,8 @@ def main() -> None:
 
         # Extract density for visualization
         density = output[0]  # Shape: (H, W)
-        #vel_mag = np.sqrt(output[1]**2 + output[2]**2)
-        #vel_mag = (vel_mag - vel_mag.min()) / (vel_mag.max() - vel_mag.min() + 1e-8)
+        # vel_mag = np.sqrt(output[1]**2 + output[2]**2)
+        # vel_mag = (vel_mag - vel_mag.min()) / (vel_mag.max() - vel_mag.min() + 1e-8)
 
         density_frames.append(density)
 

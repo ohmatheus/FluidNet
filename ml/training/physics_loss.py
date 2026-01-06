@@ -123,6 +123,7 @@ def emitter_spawn_loss(
     forbidden_density = density_pred * (~allowed_mask).float()
     return forbidden_density.mean()
 
+
 class PhysicsAwareLoss(nn.Module):
     """
     Combines:
@@ -210,10 +211,10 @@ class PhysicsAwareLoss(nn.Module):
             loss_dict["emitter"] = loss_emitter.item()
 
         total_loss = (
-            self.mse_weight * loss_mse +
-            self.divergence_weight * loss_div +
-            self.gradient_weight * loss_grad +
-            self.emitter_weight * loss_emitter
+            self.mse_weight * loss_mse
+            + self.divergence_weight * loss_div
+            + self.gradient_weight * loss_grad
+            + self.emitter_weight * loss_emitter
         )
 
         loss_dict["total"] = total_loss.item()

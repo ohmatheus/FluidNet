@@ -27,7 +27,13 @@ def check_cache_exists(cache_dir: Path) -> bool:
 
 
 def generate_simulation(
-    sim_index: int, resolution: int, frames: int, output_base_dir: Path, blend_dir: Path, seed: int, collider_mode: str = "medium"
+    sim_index: int,
+    resolution: int,
+    frames: int,
+    output_base_dir: Path,
+    blend_dir: Path,
+    seed: int,
+    collider_mode: str = "medium",
 ) -> tuple[bool, str]:
     cache_name = f"cache_{sim_index:04d}"
     resolution_dir = output_base_dir / str(resolution)
@@ -88,7 +94,9 @@ def generate_simulation(
 
 def worker_wrapper(task_args: tuple) -> tuple[int, bool, str]:
     sim_index, resolution, frames, output_base_dir, blend_dir, seed, collider_mode = task_args
-    success, status = generate_simulation(sim_index, resolution, frames, output_base_dir, blend_dir, seed, collider_mode)
+    success, status = generate_simulation(
+        sim_index, resolution, frames, output_base_dir, blend_dir, seed, collider_mode
+    )
     return (sim_index, success, status)
 
 

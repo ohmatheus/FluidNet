@@ -146,10 +146,7 @@ class Trainer:
 
                 if self.gradient_clip_enabled:
                     self.scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(
-                        self.model.parameters(),
-                        self.gradient_clip_norm
-                    )
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_norm)
 
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
@@ -159,10 +156,7 @@ class Trainer:
                 loss.backward()
 
                 if self.gradient_clip_enabled:
-                    torch.nn.utils.clip_grad_norm_(
-                        self.model.parameters(),
-                        self.gradient_clip_norm
-                    )
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_norm)
 
                 self.optimizer.step()
 

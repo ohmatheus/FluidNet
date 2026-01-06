@@ -109,8 +109,8 @@ def clamp_to_bounds(position: tuple, margin: float = 0.1) -> tuple:
 
 def animate_emitter(obj: Any, mesh_type: str, frames: int) -> None:
     start_pos = obj.location.copy()
-    #max_displacement = random.uniform(0.2, 0.6)
-    max_displacement = 0.0000001 #random.uniform(0.0001, 0.0005)
+    # max_displacement = random.uniform(0.2, 0.6)
+    max_displacement = 0.0000001  # random.uniform(0.0001, 0.0005)
 
     middle_x = start_pos.x + random.uniform(-max_displacement, max_displacement)
     middle_z = start_pos.z + random.uniform(-max_displacement, max_displacement)
@@ -133,7 +133,7 @@ def animate_emitter(obj: Any, mesh_type: str, frames: int) -> None:
         for keyframe in fcurve.keyframe_points:
             keyframe.interpolation = "BEZIER"
 
-    #if mesh_type == "CUBE":
+    # if mesh_type == "CUBE":
     #    start_rot = obj.rotation_euler[1]
 
     #    rot_direction = random.choice([-1, 1])
@@ -216,7 +216,9 @@ def create_random_meshes(seed: int, frames: int, collider_mode: str = "medium") 
     num_emitters = random.randint(1, 2)
     num_meshes = num_emitters + num_colliders
 
-    print(f"Creating {num_meshes} random meshes ({num_emitters} emitters, {num_colliders} colliders, mode={collider_mode}, seed={seed})")
+    print(
+        f"Creating {num_meshes} random meshes ({num_emitters} emitters, {num_colliders} colliders, mode={collider_mode}, seed={seed})"
+    )
 
     meshes_info = []
 
