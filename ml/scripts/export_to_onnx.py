@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 
 from config.config import PROJECT_ROOT_PATH, project_config
-from models.small_unet_full import SmallUNetFull, SmallUNetFullConfig
+from models.unet import UNet, UNetConfig
 
 CHECKPOINT_FILENAME = "best_model.pth"
 RESOLUTION = project_config.simulation.grid_resolution
@@ -14,7 +14,7 @@ ONNX_OPSET_VERSION = 18  # Modern opset with good compatibility
 DEVICE = "cuda"
 
 
-def load_model_from_checkpoint(checkpoint_path: Path, device: str) -> SmallUNetFull:
+def load_model_from_checkpoint(checkpoint_path: Path, device: str) -> UNet:
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
     if "config" not in checkpoint:
@@ -39,8 +39,8 @@ def load_model_from_checkpoint(checkpoint_path: Path, device: str) -> SmallUNetF
     use_residual = config.get("use_residual", True)
     bottleneck_blocks = config.get("bottleneck_blocks", 1)
 
-    model = SmallUNetFull(
-        cfg=SmallUNetFullConfig(
+    model = UNet(
+        cfg=UNetConfig(
             in_channels=in_channels,
             out_channels=out_channels,
             base_channels=base_channels,

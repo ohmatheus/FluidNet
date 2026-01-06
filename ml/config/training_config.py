@@ -3,7 +3,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from config.config import PROJECT_ROOT_PATH, project_config
-from models.small_unet_full import ActType, NormType, UpsampleType
+from models.unet import ActType, NormType, UpsampleType
 
 
 class PhysicsLossConfig(BaseModel):
@@ -45,7 +45,7 @@ class TrainingConfig(BaseModel):
     # Dataset settings
     npz_dir: Path = Path(PROJECT_ROOT_PATH / project_config.vdb_tools.npz_output_directory)
     normalize: bool = True
-    split_ratios: tuple[float, float, float] = (0.80, 0.20, 0)  # train, val, test - to change
+    split_ratios: tuple[float, float, float] = (0.81, 0.19, 0)  # train, val, test - to change
     split_seed: int = 42
     fake_empty_pct: int = 5
 

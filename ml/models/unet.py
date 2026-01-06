@@ -23,7 +23,6 @@ def _norm(norm: NormType, ch: int, groups: int) -> nn.Module:
         while g > 1 and (ch % g) != 0:
             g -= 1
         return nn.GroupNorm(g, ch)
-    raise ValueError(f"unknown norm: {norm}")
 
 
 def _act(act: ActType) -> nn.Module:
@@ -35,7 +34,6 @@ def _act(act: ActType) -> nn.Module:
         return nn.GELU()
     if act == "silu":
         return nn.SiLU(inplace=True)
-    raise ValueError(f"unknown act: {act}")
 
 
 class ConvBlock(nn.Module):
@@ -160,7 +158,7 @@ class Up(nn.Module):
 
 
 @dataclass(frozen=True)
-class SmallUNetFullConfig:
+class UNetConfig:
     in_channels: int = 7
     out_channels: int = 3
 
@@ -178,16 +176,16 @@ class SmallUNetFullConfig:
     output_activation: bool = True
 
 
-class SmallUNetFull(nn.Module):
+class UNet(nn.Module):
     """
-    More configurable U-Net (still ONNX-friendly).
+    U-Net ONNX-friendly.
     """
 
-    model_name: str = "SmallUnetFull"
+    model_name: str = "Unet"
 
-    def __init__(self, cfg: SmallUNetFullConfig | None = None) -> None:
+    def __init__(self, cfg: UNetConfig | None = None) -> None:
         super().__init__()
-        self.cfg = cfg or SmallUNetFullConfig()
+        self.cfg = cfg or UNetConfig()
 
         if self.cfg.depth < 1:
             raise ValueError("depth must be >= 1")
@@ -272,4 +270,4 @@ class SmallUNetFull(nn.Module):
         return cast("torch.Tensor", x)
 
 
-__all__ = ["SmallUNetFull", "SmallUNetFullConfig"]
+__all__ = ["UNet", "UNetConfig"]

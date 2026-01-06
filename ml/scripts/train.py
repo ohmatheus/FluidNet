@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 
 from config.training_config import TrainingConfig, project_config
 from dataset.npz_sequence import FluidNPZSequenceDataset
-from models.small_unet_full import SmallUNetFull, SmallUNetFullConfig
+from models.unet import UNet, UNetConfig
 from training.trainer import Trainer
 
 
@@ -108,8 +108,8 @@ def main() -> None:
     train_loader = DataLoader(train_ds, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers)
     val_loader = DataLoader(val_ds, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers)
 
-    model = SmallUNetFull(
-        cfg=SmallUNetFullConfig(
+    model = UNet(
+        cfg=UNetConfig(
             in_channels=config.in_channels,
             out_channels=config.out_channels,
             base_channels=config.base_channels,

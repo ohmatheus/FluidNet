@@ -7,7 +7,7 @@ import onnxruntime as ort  # type: ignore[import-untyped]
 import torch
 from numpy.typing import NDArray
 
-from models.small_unet_full import SmallUNetFull, SmallUNetFullConfig
+from models.unet import UNet, UNetConfig
 
 Backend = Literal["pytorch", "onnx"]
 
@@ -30,7 +30,7 @@ class InferenceBackend(ABC):
 class PyTorchBackend(InferenceBackend):
     def __init__(self) -> None:
         self._device: str = "cpu"
-        self._model: SmallUNetFull | None = None
+        self._model: UNet | None = None
 
     def load_model(self, model_path: str | Path, device: str) -> None:
         self._device = device
@@ -53,8 +53,8 @@ class PyTorchBackend(InferenceBackend):
         use_residual = config.get("use_residual", True)
         bottleneck_blocks = config.get("bottleneck_blocks", 1)
 
-        self._model = SmallUNetFull(
-            cfg=SmallUNetFullConfig(
+        self._model = UNet(
+            cfg=UNetConfig(
                 in_channels=config["in_channels"],
                 out_channels=config["out_channels"],
                 base_channels=config["base_channels"],
