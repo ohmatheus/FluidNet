@@ -107,18 +107,17 @@ def clamp_to_bounds(position: tuple, margin: float = 0.1) -> tuple:
     return (x, y, z)
 
 
-def animate_emitter(obj: Any, mesh_type: str, frames: int) -> None:
+def animate_mesh(obj: Any, mesh_type: str, frames: int) -> None:
     start_pos = obj.location.copy()
-    # max_displacement = random.uniform(0.2, 0.6)
-    max_displacement = 0.0000001  # random.uniform(0.0001, 0.0005)
+    max_displacement = 1e-5
 
     middle_x = start_pos.x + random.uniform(-max_displacement, max_displacement)
     middle_z = start_pos.z + random.uniform(-max_displacement, max_displacement)
-    middle_pos = clamp_to_bounds((middle_x, 0, middle_z))
+    middle_pos = (middle_x, 0, middle_z)
 
     end_x = start_pos.x + random.uniform(-max_displacement, max_displacement)
     end_z = start_pos.z + random.uniform(-max_displacement, max_displacement)
-    end_pos = clamp_to_bounds((end_x, 0, end_z))
+    end_pos = (end_x, 0, end_z)
 
     obj.location = start_pos
     obj.keyframe_insert(data_path="location", frame=1)
@@ -201,19 +200,25 @@ def create_complex_shape(
     return [parent] + cubes
 
 
-def create_random_meshes(seed: int, frames: int, collider_mode: str = "medium") -> list[dict[str, Any]]:
+def create_random_meshes(
+    seed: int, frames: int, collider_mode: str = "medium", no_emitters: bool = False, no_colliders: bool = False
+) -> list[dict[str, Any]]:
     random.seed(seed)
 
-    # Determine collider count based on mode
-    if collider_mode == "simple":
+    # Determine emitter and collider counts
+    if no_emitters:
+        num_emitters = 0
+    else:
+        num_emitters = random.randint(1, 2)
+
+    if no_colliders:
+        num_colliders = 0
+    elif collider_mode == "simple":
         num_colliders = 0
     elif collider_mode == "medium":
         num_colliders = random.randint(1, 2)
     else:  # complex
         num_colliders = random.randint(2, 3)
-
-    # Always 1-2 emitters (max 2)
-    num_emitters = random.randint(1, 2)
     num_meshes = num_emitters + num_colliders
 
     print(
@@ -237,7 +242,7 @@ def create_random_meshes(seed: int, frames: int, collider_mode: str = "medium") 
     align_axis = random.choice(["x", "z"])  # Which axis to align along
     if align_axis == "x":
         # Align colliders along X axis (varying X, fixed Z with small variation)
-        align_base_z = random.uniform(0.0, 0.5)  # Middle to upper region
+        align_base_z = random.uniform(0.1, 1.0)  # Upper region
     else:
         # Align colliders along Z axis (varying Z, fixed X with small variation)
         align_base_x = random.uniform(-0.5, 0.5)  # Center region
@@ -250,16 +255,15 @@ def create_random_meshes(seed: int, frames: int, collider_mode: str = "medium") 
     for i, role in enumerate(roles):
         if role == "Emitter":
             x = random.uniform(-1, 1)
-            z = random.uniform(-1.0, -0.1)
+            z = random.uniform(-1, -0.2)
             position = (x, 0, z)
             emitter_positions.append(position)
         else:
             if len(emitter_positions) > 0:
                 emitter_center_x = sum(p[0] for p in emitter_positions) / len(emitter_positions)
-                emitter_center_z = sum(p[2] for p in emitter_positions) / len(emitter_positions)
 
-                # Place colliders directly above emitter center (tight alignment for collision)
-                z = emitter_center_z + 0.4 + (collider_index * 0.35)
+                # Place colliders in upper region [0.1, 1.0] above emitters
+                z = 0.1 + (collider_index * 0.9 / max(1, num_colliders - 1)) if num_colliders > 1 else 0.5
                 x = emitter_center_x + random.uniform(-0.05, 0.05)
             else:
                 if align_axis == "x":
@@ -267,8 +271,8 @@ def create_random_meshes(seed: int, frames: int, collider_mode: str = "medium") 
                     x += random.uniform(-0.1, 0.1)
                     z = align_base_z + random.uniform(-0.05, 0.05)
                 else:
-                    z = -0.2 + (collider_index * 1.0 / max(1, num_colliders - 1)) if num_colliders > 1 else 0.3
-                    z += random.uniform(-0.1, 0.1)
+                    z = 0.1 + (collider_index * 0.9 / max(1, num_colliders - 1)) if num_colliders > 1 else 0.5
+                    z += random.uniform(-0.05, 0.05)
                     x = align_base_x + random.uniform(-0.05, 0.05)
 
             collider_index += 1
@@ -317,7 +321,7 @@ def create_random_meshes(seed: int, frames: int, collider_mode: str = "medium") 
             obj.name = f"{role}_{i + 1}"
             obj.animation_data_create()
             configure_emitter(obj)
-            animate_emitter(obj, mesh_type, frames)
+            animate_mesh(obj, mesh_type, frames)
 
             actual_scale = obj.scale
 
@@ -369,6 +373,9 @@ def create_random_meshes(seed: int, frames: int, collider_mode: str = "medium") 
                 obj.animation_data_create()
                 configure_collider(obj)
 
+                if num_emitters == 0:
+                    animate_mesh(obj, mesh_type, frames)
+
                 actual_scale = obj.scale
 
                 meshes_info.append(
@@ -399,6 +406,9 @@ def create_random_meshes(seed: int, frames: int, collider_mode: str = "medium") 
 
                 parent = objects[0]
                 parent.animation_data_create()
+
+                if num_emitters == 0:
+                    animate_mesh(parent, "CUBE", frames)
 
                 meshes_info.append(
                     {
@@ -465,21 +475,22 @@ def bake_and_export(domain: Any, params: dict[str, Any], meshes_info: list[dict[
             obj.select_set(True)
             selected_count += 1
 
-    if selected_count == 0:
-        raise RuntimeError("No emitter/collider meshes found for Alembic export")
-
-    bpy.context.scene.frame_start = 1
-    bpy.context.scene.frame_end = frames
-
     abc_path = output_dir.parent / f"{cache_name}.abc"
-    print(f"Exporting Alembic (frames {bpy.context.scene.frame_start}-{bpy.context.scene.frame_end}): {abc_path}")
 
-    bpy.ops.wm.alembic_export(
-        filepath=str(abc_path),
-        selected=True,
-        start=1,
-        end=frames,
-    )
+    if selected_count > 0:
+        bpy.context.scene.frame_start = 1
+        bpy.context.scene.frame_end = frames
+
+        print(f"Exporting Alembic (frames {bpy.context.scene.frame_start}-{bpy.context.scene.frame_end}): {abc_path}")
+
+        bpy.ops.wm.alembic_export(
+            filepath=str(abc_path),
+            selected=True,
+            start=1,
+            end=frames,
+        )
+    else:
+        print("Skipping Alembic export: no emitters or colliders in scene")
 
     blend_output_dir.mkdir(parents=True, exist_ok=True)
     blend_path = blend_output_dir / f"{cache_name}.blend"
@@ -517,7 +528,13 @@ def main() -> None:
 
         create_fresh_scene()
         domain = create_fluid_domain(params["resolution"])
-        meshes_info = create_random_meshes(params["seed"], params["frames"], params.get("collider_mode", "medium"))
+        meshes_info = create_random_meshes(
+            params["seed"],
+            params["frames"],
+            params.get("collider_mode", "medium"),
+            params.get("no_emitters", False),
+            params.get("no_colliders", False),
+        )
         bake_and_export(domain, params, meshes_info)
 
         print("\nSUCCESS\n")

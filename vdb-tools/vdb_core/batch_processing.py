@@ -227,18 +227,22 @@ def process_single_cache_sequence(
     emitter_frames = []
     collider_frames = []
     hw_ref = None
-    assert abc_metadata
 
     emitter_meshes = validate_emitter_meshes(abc_metadata)
-    print(
-        f"Validated {len(emitter_meshes)} emitter mesh(es): {', '.join([f'{m.name} ({m.geometry_type})' for m in emitter_meshes])}"
-    )
+    if emitter_meshes:
+        print(
+            f"Validated {len(emitter_meshes)} emitter mesh(es): {', '.join([f'{m.name} ({m.geometry_type})' for m in emitter_meshes])}"
+        )
+    else:
+        print("No emitter meshes found")
 
     collider_meshes = validate_collider_meshes(abc_metadata)
     if collider_meshes is not None:
         print(
             f"Validated {len(collider_meshes)} collider mesh(es): {', '.join([f'{m.name} ({m.geometry_type})' for m in collider_meshes])}"
         )
+    else:
+        print("No collider meshes found")
 
     for frame_idx, vdb_file in enumerate(vdb_files):
         if abc_metadata and abc_metadata.meshes:
@@ -379,7 +383,7 @@ def process_single_cache_sequence(
 
 def _process_cache_worker(
     args_tuple: tuple[Path, Path, Path, int, int | None, bool, list[int] | None, int],
-) -> tuple[int, list[SequenceStats], str, dict]:
+) -> tuple[int, list[SequenceStats], str, dict | None]:
     (
         cache_data_dir,
         blender_caches_root,
@@ -397,9 +401,9 @@ def _process_cache_worker(
     print(f"{'=' * 60}")
 
     abc_path = find_abc_for_cache(cache_data_dir, blender_caches_root)
-    abc_metadata = extract_abc_metadata(abc_path, cache_name)
+    abc_metadata = extract_abc_metadata(abc_path, cache_name) if abc_path else None
 
-    mesh_metadata = abc_metadata.to_dict()
+    mesh_metadata = abc_metadata.to_dict() if abc_metadata else None
 
     sequences_from_cache, cache_stats = process_single_cache_sequence(
         cache_data_dir=cache_data_dir,
@@ -455,9 +459,9 @@ def process_all_cache_sequences(
             print(f"{'=' * 60}")
 
             abc_path = find_abc_for_cache(cache_data_dir, blender_caches_root)
-            abc_metadata = extract_abc_metadata(abc_path, cache_name)
+            abc_metadata = extract_abc_metadata(abc_path, cache_name) if abc_path else None
 
-            all_mesh_metadata[cache_name] = abc_metadata.to_dict()
+            all_mesh_metadata[cache_name] = abc_metadata.to_dict() if abc_metadata else None
 
             sequences_from_cache, cache_stats = process_single_cache_sequence(
                 cache_data_dir=cache_data_dir,

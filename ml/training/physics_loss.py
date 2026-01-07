@@ -28,7 +28,7 @@ def compute_spatial_gradients(
     # Pad: left=1, right=1, top=1, bottom=1
     # Original shape: (B, C, H, W)
     # Padded shape: (B, C, H+2, W+2)
-    field_padded = F.pad(field, (1, 1, 1, 1), mode="replicate")
+    field_padded = F.pad(field, (1, 1, 1, 1), mode="constant", value=0.0)  # "replicate"
 
     # X gradient (horizontal) - differences along width (last) dimension
     # Take slices [2:] and [:-2] which gives us (B, C, H+2, W)
