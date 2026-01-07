@@ -8,9 +8,9 @@ from models.unet import ActType, NormType, UpsampleType
 
 class PhysicsLossConfig(BaseModel):
     mse_weight: float = 1.0
-    divergence_weight: float = 0.01
-    gradient_weight: float = 0.001
-    emitter_weight: float = 0.1
+    divergence_weight: float = 0.05
+    gradient_weight: float = 0.002
+    emitter_weight: float = 0.15
 
     enable_divergence: bool = True
     enable_gradient: bool = False
@@ -19,9 +19,15 @@ class PhysicsLossConfig(BaseModel):
     grid_spacing: float = 2.0 / project_config.simulation.grid_resolution
 
 
+class AugmentationConfig(BaseModel):
+    enable_augmentation: bool = True
+    flip_probability: float = 0.5
+    flip_axis: str = "x"
+
+
 class TrainingConfig(BaseModel):
     batch_size: int = 8
-    learning_rate: float = 0.0004
+    learning_rate: float = 0.0007
     epochs: int = 200
     device: str | None = "cuda"
     amp_enabled: bool = False
@@ -47,7 +53,9 @@ class TrainingConfig(BaseModel):
     normalize: bool = True
     split_ratios: tuple[float, float, float] = (0.81, 0.19, 0)  # train, val, test - to change
     split_seed: int = 42
-    fake_empty_pct: int = 5
+    fake_empty_pct: int = 15
+    augmentation: AugmentationConfig = AugmentationConfig()
+    preload_dataset: bool = True
 
     # Model architecture
     in_channels: int = project_config.simulation.input_channels
@@ -58,7 +66,7 @@ class TrainingConfig(BaseModel):
     act: ActType = "gelu"  # "relu", "leaky_relu", "gelu", "silu"
     group_norm_groups: int = 8
     dropout: float = 0.0
-    upsample: UpsampleType = "bilinear"  # "nearest", "bilinear", "transpose"
+    upsample: UpsampleType = "nearest"  # "nearest", "bilinear", "transpose"
     use_residual: bool = True
     bottleneck_blocks: int = 1
     output_activation: bool = True
@@ -69,8 +77,8 @@ class TrainingConfig(BaseModel):
 
     # Checkpoint settings
     checkpoint_dir: Path = Path(PROJECT_ROOT_PATH / project_config.models.pytorch_folder)
-    save_every_n_epochs: int = 3
-    keep_last_n_checkpoints: int = 20
+    save_every_n_epochs: int = 10
+    keep_last_n_checkpoints: int = 5
 
     # Physics-aware loss configuration
     physics_loss: PhysicsLossConfig = PhysicsLossConfig()

@@ -249,7 +249,7 @@ class Trainer:
             min_val_idx = self.history["val_total"].index(min(self.history["val_total"]))
             best_epoch = min_val_idx + 1
 
-        fig, ax_loss = plt.subplots(1, 1, figsize=(10, 6))
+        fig, ax_loss = plt.subplots(1, 1, figsize=(8, 5))
 
         ax_loss.plot(
             epochs,
@@ -300,6 +300,57 @@ class Trainer:
 
         return fig
 
+    def plot_loss_components(self) -> Figure:
+        num_epochs = len(self.history["train_total"])
+        if num_epochs == 0:
+            raise ValueError("No training history to plot")
+
+        epochs = list(range(1, num_epochs + 1))
+
+        if self.early_stopping is not None and self.early_stopping.best_epoch >= 0:
+            best_epoch = self.early_stopping.best_epoch + 1
+        else:
+            min_val_idx = self.history["val_total"].index(min(self.history["val_total"]))
+            best_epoch = min_val_idx + 1
+
+        components = []
+        if "train_mse" in self.history and len(self.history["train_mse"]) > 0:
+            components.append(("MSE", "train_mse", "val_mse"))
+        if "train_divergence" in self.history and len(self.history["train_divergence"]) > 0:
+            components.append(("Divergence", "train_divergence", "val_divergence"))
+        if "train_gradient" in self.history and len(self.history["train_gradient"]) > 0:
+            components.append(("Gradient", "train_gradient", "val_gradient"))
+        if "train_emitter" in self.history and len(self.history["train_emitter"]) > 0:
+            components.append(("Emitter", "train_emitter", "val_emitter"))
+
+        n_components = len(components)
+        fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+        axes = axes.flatten()
+
+        for idx, (name, train_key, val_key) in enumerate(components):
+            ax = axes[idx]
+            ax.plot(epochs, self.history[train_key], color="#0066CC", linewidth=2.0, label="Train", alpha=0.9)
+            ax.plot(epochs, self.history[val_key], color="#FF5500", linewidth=2.0, label="Val", alpha=0.9)
+            ax.axvline(x=best_epoch, color="red", linestyle="--", linewidth=1.5, alpha=0.7)
+
+            ax.set_xlabel("Epoch", fontsize=10)
+            ax.set_ylabel(f"{name} Loss", fontsize=10)
+            ax.set_title(f"{name} Loss", fontsize=12, fontweight="bold")
+            ax.grid(True, alpha=0.3)
+            ax.legend(loc="best", fontsize=9)
+
+            loss_range = max(self.history[train_key]) / (min(self.history[train_key]) + 1e-8)
+            if loss_range > 100:
+                ax.set_yscale("log")
+
+        for idx in range(n_components, 4):
+            axes[idx].axis("off")
+
+        plt.suptitle("Loss Components Over Epochs", fontsize=14, fontweight="bold")
+        plt.tight_layout()
+
+        return fig
+
     def plot_metrics_grid(self) -> Figure:
         """Create comprehensive metrics grid plot."""
         num_epochs = len(self.history["val_total"])
@@ -308,7 +359,7 @@ class Trainer:
 
         epochs = list(range(1, num_epochs + 1))
 
-        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+        fig, axes = plt.subplots(2, 3, figsize=(12, 8))
         axes = axes.flatten()
 
         axes[0].plot(epochs, self.history["val_mse_density"], label="Density", linewidth=2)
@@ -482,6 +533,25 @@ class Trainer:
             print(f"Warning: Could not generate metrics grid plot - {e}")
         except Exception as e:
             print(f"Warning: Failed to generate/save metrics grid plot - {e}")
+
+        try:
+            fig_loss_components = self.plot_loss_components()
+
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False, mode="wb") as tmp_file:
+                tmp_path = tmp_file.name
+                fig_loss_components.savefig(tmp_path, dpi=150, bbox_inches="tight")
+
+            mlflow.log_artifact(tmp_path, artifact_path="plots/loss_components.png")
+
+            Path(tmp_path).unlink()
+            plt.close(fig_loss_components)
+
+            print("Loss components plot saved to MLflow artifacts")
+
+        except ValueError as e:
+            print(f"Warning: Could not generate loss components plot - {e}")
+        except Exception as e:
+            print(f"Warning: Failed to generate/save loss components plot - {e}")
 
         print("Training complete!")
 

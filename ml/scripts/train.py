@@ -91,11 +91,28 @@ def main() -> None:
 
     print(f"Dataset splits: train={len(train_idx)}, val={len(val_idx)}, test={len(test_idx)}")
 
+    aug_config_dict = {
+        "enable_augmentation": config.augmentation.enable_augmentation,
+        "flip_probability": config.augmentation.flip_probability,
+    }
+
     train_ds = FluidNPZSequenceDataset(
-        npz_dir=npz_dir, normalize=config.normalize, seq_indices=train_idx, fake_empty_pct=config.fake_empty_pct
+        npz_dir=npz_dir,
+        normalize=config.normalize,
+        seq_indices=train_idx,
+        fake_empty_pct=config.fake_empty_pct,
+        is_training=True,
+        augmentation_config=aug_config_dict,
+        preload=config.preload_dataset,
     )
     val_ds = FluidNPZSequenceDataset(
-        npz_dir=npz_dir, normalize=config.normalize, seq_indices=val_idx, fake_empty_pct=config.fake_empty_pct
+        npz_dir=npz_dir,
+        normalize=config.normalize,
+        seq_indices=val_idx,
+        fake_empty_pct=config.fake_empty_pct,
+        is_training=False,
+        augmentation_config=None,
+        preload=config.preload_dataset,
     )
 
     # to compare models later
@@ -133,20 +150,66 @@ def main() -> None:
     with mlflow.start_run(run_name="dummy"):
         mlflow.log_params(
             {
+                # Model identity
+                "model_name": model.__class__.__name__,
+                "model_params": total_params,
+                # Basic training
                 "batch_size": config.batch_size,
                 "learning_rate": config.learning_rate,
                 "epochs": config.epochs,
-                "model_params": total_params,
-                "base_channels": config.base_channels,
-                "depth": config.depth,
-                "normalize": config.normalize,
-                "split_seed": config.split_seed,
                 "amp_enabled": config.amp_enabled,
                 "device": config.device,
+                "num_workers": config.num_workers,
+                # Physics loss configuration
+                "physics_loss.mse_weight": config.physics_loss.mse_weight,
+                "physics_loss.divergence_weight": config.physics_loss.divergence_weight,
+                "physics_loss.gradient_weight": config.physics_loss.gradient_weight,
+                "physics_loss.emitter_weight": config.physics_loss.emitter_weight,
+                "physics_loss.enable_divergence": config.physics_loss.enable_divergence,
+                "physics_loss.enable_gradient": config.physics_loss.enable_gradient,
+                "physics_loss.enable_emitter": config.physics_loss.enable_emitter,
+                "physics_loss.grid_spacing": config.physics_loss.grid_spacing,
+                # Gradient clipping
+                "gradient_clip_norm": config.gradient_clip_norm,
+                "gradient_clip_enabled": config.gradient_clip_enabled,
+                # LR scheduler
                 "use_lr_scheduler": config.use_lr_scheduler,
                 "lr_scheduler_type": config.lr_scheduler_type,
+                "lr_scheduler_patience": config.lr_scheduler_patience,
+                "lr_scheduler_factor": config.lr_scheduler_factor,
+                "lr_scheduler_min_lr": config.lr_scheduler_min_lr,
+                "lr_scheduler_step_size": config.lr_scheduler_step_size,
+                "lr_scheduler_t_max": config.lr_scheduler_t_max,
+                # Early stopping
                 "use_early_stopping": config.use_early_stopping,
                 "early_stop_patience": config.early_stop_patience,
+                "early_stop_min_delta": config.early_stop_min_delta,
+                # Dataset configuration
+                "normalize": config.normalize,
+                "split_ratios": str(config.split_ratios),
+                "split_seed": config.split_seed,
+                "fake_empty_pct": config.fake_empty_pct,
+                "preload_dataset": config.preload_dataset,
+                # Augmentation configuration
+                "augmentation.enable": config.augmentation.enable_augmentation,
+                "augmentation.flip_probability": config.augmentation.flip_probability,
+                "augmentation.flip_axis": config.augmentation.flip_axis,
+                # Model architecture
+                "in_channels": config.in_channels,
+                "out_channels": config.out_channels,
+                "base_channels": config.base_channels,
+                "depth": config.depth,
+                "norm": config.norm,
+                "act": config.act,
+                "group_norm_groups": config.group_norm_groups,
+                "dropout": config.dropout,
+                "upsample": config.upsample,
+                "use_residual": config.use_residual,
+                "bottleneck_blocks": config.bottleneck_blocks,
+                "output_activation": config.output_activation,
+                # Checkpoint settings
+                "save_every_n_epochs": config.save_every_n_epochs,
+                "keep_last_n_checkpoints": config.keep_last_n_checkpoints,
             }
         )
 

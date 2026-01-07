@@ -1,10 +1,13 @@
+import time
 from pathlib import Path
 
 import numpy as np
+import psutil  # type: ignore
 import torch
 from torch.utils.data import Dataset
 
 from config.config import PROJECT_ROOT_PATH, project_config
+from dataset.augmentations import apply_augmentation
 from dataset.normalization import load_normalization_scales
 
 
@@ -127,11 +130,11 @@ def _create_fake_sample(
 
     # ---------------------------
     # Randomly choose between zeros and ones to avoid collider/density bias (per-sequence randomization)
-    # collider_value = np.random.choice([0.0, 1.0])
-    # collider = np.full((T, H, W), collider_value, dtype=np.float32)
+    collider_value = np.random.choice([0.0, 1.0])
+    collider = np.full((T, H, W), collider_value, dtype=np.float32)
 
     # collider = np.ones((T, H, W), dtype=np.float32)
-    collider = np.zeros((T, H, W), dtype=np.float32)
+    # collider = np.zeros((T, H, W), dtype=np.float32)
     # ---------------------------
 
     # Extract time slices
@@ -215,10 +218,17 @@ class FluidNPZSequenceDataset(Dataset):
         normalize: bool = False,
         seq_indices: list[int] | None = None,
         fake_empty_pct: int = 0,
+        is_training: bool = False,
+        augmentation_config: dict | None = None,
+        preload: bool = False,
     ) -> None:
         self.npz_dir = npz_dir
         self.normalize = normalize
         self.fake_empty_pct = fake_empty_pct
+        self.is_training = is_training
+        self.augmentation_config = augmentation_config or {}
+        self.enable_augmentation = self.augmentation_config.get("enable_augmentation", False)
+        self.flip_probability = self.augmentation_config.get("flip_probability", 0.5)
 
         npz_dir_path = Path(npz_dir)
         all_seq_paths: list[Path] = sorted(
@@ -260,16 +270,125 @@ class FluidNPZSequenceDataset(Dataset):
         else:
             self._fake_shape = None
 
+        self.preload = preload
+        self._preloaded_sequences: dict[int, dict[str, np.ndarray]] | None = None
+
+        if self.preload:
+            self._preload_sequences()
+
+    def _estimate_memory_usage(self, seq_paths: list[Path]) -> tuple[int, str]:
+        total_bytes = 0
+
+        for path in seq_paths:
+            with np.load(path) as data:
+                for key in ["density", "velx", "velz", "emitter", "collider"]:
+                    if key in data:
+                        arr = data[key]
+                        total_bytes += arr.size * arr.itemsize
+
+        size = float(total_bytes)
+        for unit in ["B", "KB", "MB", "GB"]:
+            if size < 1024.0:
+                return total_bytes, f"{size:.2f} {unit}"
+            size /= 1024.0
+
+        return total_bytes, f"{size:.2f} TB"
+
+    def _preload_sequences(self) -> None:
+        print(f"Preloading {self.num_real_sequences} sequences into memory...")
+
+        mem_bytes, mem_str = self._estimate_memory_usage(self.seq_paths)
+        print(f"Estimated memory usage: {mem_str}")
+
+        try:
+            available_gb = psutil.virtual_memory().available / (1024**3)
+            required_gb = mem_bytes / (1024**3)
+            if required_gb > available_gb * 0.8:
+                print(f"WARNING: Required memory ({required_gb:.2f} GB) is close to available ({available_gb:.2f} GB)")
+        except ImportError:
+            pass
+
+        self._preloaded_sequences = {}
+        start_time = time.time()
+
+        try:
+            for si, path in enumerate(self.seq_paths):
+                with np.load(path) as data:
+                    seq_data = {
+                        "density": data["density"].astype(np.float32, copy=True),
+                        "velx": data["velx"].astype(np.float32, copy=True),
+                        "velz": data["velz"].astype(np.float32, copy=True),
+                        "emitter": data["emitter"].astype(np.float32, copy=True) if "emitter" in data else None,
+                        "collider": data["collider"].astype(np.float32, copy=True) if "collider" in data else None,
+                    }
+
+                    self._preloaded_sequences[si] = seq_data
+
+        except MemoryError as e:
+            print("ERROR: Out of memory during preloading. Falling back to on-disk loading.")
+            print("Consider: 1) Setting preload=False, 2) Reducing batch_size, 3) Adding more RAM")
+            self._preloaded_sequences = None
+            self.preload = False
+            raise RuntimeError("Dataset preloading failed due to insufficient memory") from e
+        except Exception as e:
+            print(f"ERROR: Unexpected error during preloading: {e}")
+            self._preloaded_sequences = None
+            self.preload = False
+            raise
+
+        elapsed = time.time() - start_time
+        print(f"Preloaded {self.num_real_sequences} sequences in {elapsed:.2f}s")
+
+    def _load_sample_from_memory(self, si: int, t: int) -> tuple[torch.Tensor, torch.Tensor]:
+        assert self._preloaded_sequences is not None, "Preloaded sequences should be available"
+        seq_data = self._preloaded_sequences[si]
+
+        d = seq_data["density"]
+        vx = seq_data["velx"]
+        vz = seq_data["velz"]
+        emitter = seq_data["emitter"] if seq_data["emitter"] is not None else np.zeros_like(d)
+        collider = seq_data["collider"] if seq_data["collider"] is not None else np.zeros_like(d)
+
+        d_tminus = d[t - 1]
+        d_t = d[t]
+        d_tp1 = d[t + 1]
+
+        vx_t = vx[t]
+        vx_tp1 = vx[t + 1]
+
+        vz_t = vz[t]
+        vz_tp1 = vz[t + 1]
+
+        emitter_t = emitter[t]
+        collider_t = collider[t]
+
+        if self.normalize and self._norm_scales is not None:
+            d_t, d_tminus, d_tp1, vx_t, vx_tp1, vz_t, vz_tp1 = _apply_normalization(
+                d_t, d_tminus, d_tp1, vx_t, vx_tp1, vz_t, vz_tp1, self._norm_scales
+            )
+
+        x = np.stack([d_t, vx_t, vz_t, d_tminus, emitter_t, collider_t], axis=0)
+        y = np.stack([d_tp1, vx_tp1, vz_tp1], axis=0)
+
+        return torch.from_numpy(x), torch.from_numpy(y)
+
     def __len__(self) -> int:
         return len(self._index)
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         si, t = self._index[idx]
 
-        # if fake sequence
         if si >= self.num_real_sequences:
             assert self._fake_shape is not None, "Fake shape should be set when fake sequences are enabled"
-            return _create_fake_sample(t, self._fake_shape, self.normalize, self._norm_scales)
+            x, y = _create_fake_sample(t, self._fake_shape, self.normalize, self._norm_scales)
+        else:
+            if self.preload and self._preloaded_sequences is not None:
+                x, y = self._load_sample_from_memory(si, t)
+            else:
+                path = self.seq_paths[si]
+                x, y = _load_sample(path, t, self.normalize, self._norm_scales)
 
-        path = self.seq_paths[si]
-        return _load_sample(path, t, self.normalize, self._norm_scales)
+        if self.is_training and self.enable_augmentation:
+            x, y = apply_augmentation(x, y, self.flip_probability)
+
+        return x, y
