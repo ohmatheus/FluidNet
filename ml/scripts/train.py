@@ -100,19 +100,22 @@ def main() -> None:
         npz_dir=npz_dir,
         normalize=config.normalize,
         seq_indices=train_idx,
-        fake_empty_pct=config.fake_empty_pct,
         is_training=True,
         augmentation_config=aug_config_dict,
         preload=config.preload_dataset,
+        rollout_steps=config.rollout_steps,
     )
+
+    # Validation dataset: K=1 or matches training K
+    val_rollout_steps = config.rollout_steps if config.validation_use_rollout_k else 1
     val_ds = FluidNPZSequenceDataset(
         npz_dir=npz_dir,
         normalize=config.normalize,
         seq_indices=val_idx,
-        fake_empty_pct=config.fake_empty_pct,
         is_training=False,
         augmentation_config=None,
         preload=config.preload_dataset,
+        rollout_steps=val_rollout_steps,
     )
 
     # to compare models later
@@ -188,12 +191,18 @@ def main() -> None:
                 "normalize": config.normalize,
                 "split_ratios": str(config.split_ratios),
                 "split_seed": config.split_seed,
-                "fake_empty_pct": config.fake_empty_pct,
                 "preload_dataset": config.preload_dataset,
                 # Augmentation configuration
                 "augmentation.enable": config.augmentation.enable_augmentation,
                 "augmentation.flip_probability": config.augmentation.flip_probability,
                 "augmentation.flip_axis": config.augmentation.flip_axis,
+                # Multi-step rollout training
+                "rollout_steps": config.rollout_steps,
+                "rollout_schedule": str(config.rollout_schedule),
+                "rollout_weight_decay": config.rollout_weight_decay,
+                "rollout_gradient_truncation": config.rollout_gradient_truncation,
+                "rollout_reset_lr_on_k_change": config.rollout_reset_lr_on_k_change,
+                "validation_use_rollout_k": config.validation_use_rollout_k,
                 # Model architecture
                 "in_channels": config.in_channels,
                 "out_channels": config.out_channels,
@@ -214,7 +223,13 @@ def main() -> None:
         )
 
         trainer = Trainer(
-            model=model, train_loader=train_loader, val_loader=val_loader, config=config, device=config.device
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            config=config,
+            device=config.device,
+            train_indices=train_idx,
+            val_indices=val_idx,
         )
 
         trainer.train()

@@ -51,6 +51,7 @@ ignore = [
     "ANN401",   # allow Any in some cases
     "N806",     # ML is full of upper case names
     "N812",     # ML import is full of upper case names
+    "N803",     # I just like to have UPPERCASE sometimes
 ]
 
 [tool.mypy]

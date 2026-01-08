@@ -14,7 +14,9 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau, StepL
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from config.config import PROJECT_ROOT_PATH, project_config
 from config.training_config import TrainingConfig
+from dataset.npz_sequence import FluidNPZSequenceDataset
 from training.early_stopping import EarlyStopping
 from training.metrics import (
     MetricsTracker,
@@ -35,12 +37,18 @@ class Trainer:
         val_loader: DataLoader,
         config: TrainingConfig,
         device: str,
+        train_indices: list[int] | None = None,
+        val_indices: list[int] | None = None,
     ) -> None:
         self.model = model
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.config = config.model_copy()
         self.device = device
+
+        # Store indices for dataloader recreation during scheduled rollout
+        self.train_indices = train_indices
+        self.val_indices = val_indices
 
         self.gradient_clip_norm = config.gradient_clip_norm
         self.gradient_clip_enabled = config.gradient_clip_enabled
@@ -130,17 +138,32 @@ class Trainer:
         num_batches = 0
 
         pbar = tqdm(self.train_loader, desc="Training", leave=False)
-        for inputs, targets in pbar:
-            inputs = inputs.to(self.device, non_blocking=True)
-            targets = targets.to(self.device, non_blocking=True)
+        for batch_data in pbar:
+            # Detect rollout mode based on batch structure
+            if len(batch_data) == 3:
+                # Rollout mode: (x_0, y_seq, masks)
+                inputs, targets, masks = batch_data
+                inputs = inputs.to(self.device, non_blocking=True)
+                targets = targets.to(self.device, non_blocking=True)
+                masks = masks.to(self.device, non_blocking=True)
+                rollout_mode = True
+            else:
+                # Single-step mode: (x, y)
+                inputs, targets = batch_data
+                inputs = inputs.to(self.device, non_blocking=True)
+                targets = targets.to(self.device, non_blocking=True)
+                rollout_mode = False
 
             self.optimizer.zero_grad()
 
             # AMP
             if self.scaler is not None:
                 with autocast(device_type=self.device):
-                    outputs = self.model(inputs)
-                    loss, loss_dict = self.criterion(outputs, targets, inputs)
+                    if rollout_mode:
+                        loss, loss_dict = self._compute_rollout_loss(inputs, targets, masks)
+                    else:
+                        outputs = self.model(inputs)
+                        loss, loss_dict = self.criterion(outputs, targets, inputs)
 
                 self.scaler.scale(loss).backward()
 
@@ -151,8 +174,12 @@ class Trainer:
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
             else:
-                outputs = self.model(inputs)
-                loss, loss_dict = self.criterion(outputs, targets, inputs)
+                if rollout_mode:
+                    loss, loss_dict = self._compute_rollout_loss(inputs, targets, masks)
+                else:
+                    outputs = self.model(inputs)
+                    loss, loss_dict = self.criterion(outputs, targets, inputs)
+
                 loss.backward()
 
                 if self.gradient_clip_enabled:
@@ -181,13 +208,40 @@ class Trainer:
 
         with torch.no_grad():
             pbar = tqdm(self.val_loader, desc="Validation", leave=False)
-            for inputs, targets in pbar:
-                # Move data to device
-                inputs = inputs.to(self.device, non_blocking=True)
-                targets = targets.to(self.device, non_blocking=True)
+            for batch_data in pbar:
+                # Detect rollout mode based on batch structure
+                if len(batch_data) == 3:
+                    # Rollout mode: (x_0, y_seq, masks)
+                    inputs, targets, masks = batch_data
+                    inputs = inputs.to(self.device, non_blocking=True)
+                    targets = targets.to(self.device, non_blocking=True)
+                    masks = masks.to(self.device, non_blocking=True)
+                    rollout_mode = True
+                else:
+                    # Single-step mode: (x, y)
+                    inputs, targets = batch_data
+                    inputs = inputs.to(self.device, non_blocking=True)
+                    targets = targets.to(self.device, non_blocking=True)
+                    rollout_mode = False
 
-                outputs = self.model(inputs)
-                loss, loss_dict = self.criterion(outputs, targets, inputs)
+                # Compute loss (with or without AMP)
+                if self.scaler is not None:
+                    with autocast(device_type=self.device):
+                        if rollout_mode:
+                            loss, loss_dict = self._compute_rollout_loss(inputs, targets, masks)
+                            # For rollout mode, we skip detailed metrics (only track loss)
+                            outputs = None
+                        else:
+                            outputs = self.model(inputs)
+                            loss, loss_dict = self.criterion(outputs, targets, inputs)
+                else:
+                    if rollout_mode:
+                        loss, loss_dict = self._compute_rollout_loss(inputs, targets, masks)
+                        # For rollout mode, we skip detailed metrics (only track loss)
+                        outputs = None
+                    else:
+                        outputs = self.model(inputs)
+                        loss, loss_dict = self.criterion(outputs, targets, inputs)
 
                 num_batches += 1
 
@@ -196,44 +250,159 @@ class Trainer:
                         loss_accumulators[key] = 0.0
                     loss_accumulators[key] += value
 
-                density_pred = outputs[:, 0, :, :]
-                velx_pred = outputs[:, 1, :, :]
-                vely_pred = outputs[:, 2, :, :]
+                # Only compute detailed metrics for single-step mode
+                if not rollout_mode and outputs is not None:
+                    density_pred = outputs[:, 0, :, :]
+                    velx_pred = outputs[:, 1, :, :]
+                    vely_pred = outputs[:, 2, :, :]
 
-                emitter_mask = inputs[:, 4, :, :]
-                collider_mask = inputs[:, 5, :, :]
+                    emitter_mask = inputs[:, 4, :, :]
+                    collider_mask = inputs[:, 5, :, :]
 
-                batch_metrics = {}
+                    batch_metrics = {}
 
-                batch_metrics.update(compute_per_channel_mse(outputs, targets))
+                    batch_metrics.update(compute_per_channel_mse(outputs, targets))
 
-                batch_metrics["divergence_norm"] = compute_divergence_norm(
-                    velx_pred,
-                    vely_pred,
-                    dx=self.config.physics_loss.grid_spacing,
-                    dy=self.config.physics_loss.grid_spacing,
-                )
+                    batch_metrics["divergence_norm"] = compute_divergence_norm(
+                        velx_pred,
+                        vely_pred,
+                        dx=self.config.physics_loss.grid_spacing,
+                        dy=self.config.physics_loss.grid_spacing,
+                    )
 
-                batch_metrics["kinetic_energy"] = compute_kinetic_energy(velx_pred, vely_pred)
+                    batch_metrics["kinetic_energy"] = compute_kinetic_energy(velx_pred, vely_pred)
 
-                batch_metrics["collider_violation"] = compute_collider_violation(density_pred, collider_mask)
+                    batch_metrics["collider_violation"] = compute_collider_violation(density_pred, collider_mask)
 
-                batch_metrics["emitter_density_accuracy"] = compute_emitter_density_accuracy(
-                    density_pred, emitter_mask, expected_injection=0.8
-                )
+                    batch_metrics["emitter_density_accuracy"] = compute_emitter_density_accuracy(
+                        density_pred, emitter_mask, expected_injection=0.8
+                    )
 
-                metrics_tracker.update(batch_metrics)
+                    metrics_tracker.update(batch_metrics)
 
                 pbar.set_postfix({"loss": f"{loss.item():.6f}"})
 
-        # Average all losses
         avg_losses = {key: value / num_batches for key, value in loss_accumulators.items()}
 
-        # Average all metrics
         avg_metrics = metrics_tracker.compute_averages()
 
-        # Merge and return
         return {**avg_losses, **avg_metrics}
+
+    def _compute_rollout_loss(
+        self,
+        x_0: torch.Tensor,
+        y_seq: torch.Tensor,
+        masks: torch.Tensor,
+    ) -> tuple[torch.Tensor, dict[str, float]]:
+        """
+        Compute loss for K-step autoregressive rollout.
+        """
+        K = y_seq.shape[1]
+
+        state_current = x_0[:, :3, :, :]  # [d_t, vx_t, vz_t]
+        state_prev = x_0[:, 3:4, :, :]  # [d_t-1]
+
+        if self.config.rollout_final_step_only:
+            for k in range(K):
+                emitter_k = masks[:, k, 0:1, :, :]
+                collider_k = masks[:, k, 1:2, :, :]
+                model_input = torch.cat([state_current, state_prev, emitter_k, collider_k], dim=1)
+
+                pred = self.model(model_input)  # (B, 3, H, W)
+
+                if k == K - 1:
+                    target_final = y_seq[:, k, :, :, :]
+                    final_loss, loss_dict = self.criterion(pred, target_final, model_input)
+                    return final_loss, loss_dict
+
+                if self.config.rollout_gradient_truncation:
+                    state_prev = pred[:, 0:1, :, :].detach()
+                    state_current = pred.detach()
+                else:
+                    state_prev = pred[:, 0:1, :, :]
+                    state_current = pred
+
+            raise RuntimeError("Should have returned on final step")
+
+        else:
+            # WEIGHTED-AVERAGE MODE
+            total_loss = torch.tensor(0.0, device=x_0.device)
+            loss_accumulator: dict[str, float] = {}
+            weight_sum = 0.0
+
+            for k in range(K):
+                emitter_k = masks[:, k, 0:1, :, :]
+                collider_k = masks[:, k, 1:2, :, :]
+                model_input = torch.cat([state_current, state_prev, emitter_k, collider_k], dim=1)
+
+                pred = self.model(model_input)  # (B, 3, H, W)
+
+                target_k = y_seq[:, k, :, :, :]
+                loss_k, loss_dict_k = self.criterion(pred, target_k, model_input)
+
+                weight = self.config.rollout_weight_decay**k
+                total_loss += weight * loss_k
+                weight_sum += weight
+
+                # Accumulate weighted loss components
+                for key, val in loss_dict_k.items():
+                    if key not in loss_accumulator:
+                        loss_accumulator[key] = 0.0
+                    loss_accumulator[key] += weight * val
+
+                # Update state for next iteration
+                if self.config.rollout_gradient_truncation:
+                    state_prev = pred[:, 0:1, :, :].detach()
+                    state_current = pred.detach()
+                else:
+                    state_prev = pred[:, 0:1, :, :]
+                    state_current = pred
+
+            total_loss = total_loss / weight_sum
+            averaged_dict = {k: v / weight_sum for k, v in loss_accumulator.items()}
+            return total_loss, averaged_dict
+
+    def _get_scheduled_rollout_steps(self, epoch: int) -> int:
+        scheduled_epochs = sorted(self.config.rollout_schedule.keys(), reverse=True)
+        for start_epoch in scheduled_epochs:
+            if epoch >= start_epoch:
+                return self.config.rollout_schedule[start_epoch]
+        return self.config.rollout_schedule[0]
+
+    def _create_dataloader_with_rollout_steps(self, K: int, is_training: bool) -> DataLoader:
+        # Check if we have indices
+        if is_training:
+            if self.train_indices is None:
+                raise RuntimeError("Cannot recreate dataloader: train_indices not provided to Trainer")
+            indices = self.train_indices
+        else:
+            if self.val_indices is None:
+                raise RuntimeError("Cannot recreate dataloader: val_indices not provided to Trainer")
+            indices = self.val_indices
+
+        npz_dir = (
+            PROJECT_ROOT_PATH
+            / project_config.vdb_tools.npz_output_directory
+            / str(project_config.simulation.grid_resolution)
+        )
+
+        dataset = FluidNPZSequenceDataset(
+            npz_dir=npz_dir,
+            normalize=self.config.normalize,
+            seq_indices=indices,
+            is_training=is_training,
+            augmentation_config=self.config.augmentation.model_dump() if is_training else None,
+            preload=self.config.preload_dataset,
+            rollout_steps=K,
+        )
+
+        return DataLoader(
+            dataset,
+            batch_size=self.config.batch_size,
+            shuffle=is_training,
+            num_workers=self.config.num_workers,
+            pin_memory=True if self.device == "cuda" else False,
+        )
 
     def plot_training_history(self) -> Figure:
         num_epochs = len(self.history["train_total"])
@@ -419,8 +588,57 @@ class Trainer:
 
     def train(self) -> None:
         print(f"Starting training for {self.config.epochs} epochs...")
+        print(f"Initial rollout steps: K={self.config.rollout_steps}")
+        print(f"Rollout schedule: {self.config.rollout_schedule}")
+        if self.config.validation_use_rollout_k:
+            print("Validation will match training K (changes with schedule)")
+        else:
+            print("Validation will always use K=1 for consistent metrics")
 
         for epoch in range(self.config.epochs):
+            # Scheduled rollout: Update K based on epoch
+            new_K = self._get_scheduled_rollout_steps(epoch)
+            if new_K != self.config.rollout_steps:
+                old_K = self.config.rollout_steps
+                self.config.rollout_steps = new_K
+                print(f"\n{'=' * 60}")
+                print(f"SCHEDULED ROLLOUT UPDATE: K={old_K} → K={new_K} at epoch {epoch}")
+                print(f"{'=' * 60}")
+
+                # Recreate training dataloader with new K
+                if self.train_indices is not None:
+                    print(f"Recreating training dataloader with K={new_K}...")
+                    self.train_loader = self._create_dataloader_with_rollout_steps(new_K, is_training=True)
+                    print("Training dataloader recreated successfully")
+                else:
+                    print("WARNING: Cannot recreate training dataloader (train_indices not provided)")
+
+                # Recreate validation dataloader if it should match training K
+                if self.config.validation_use_rollout_k and self.val_indices is not None:
+                    print(f"Recreating validation dataloader with K={new_K}...")
+                    self.val_loader = self._create_dataloader_with_rollout_steps(new_K, is_training=False)
+                    print("Validation dataloader recreated successfully")
+
+                # Reset early stopping when K changes (new training regime)
+                if self.early_stopping is not None:
+                    old_best = self.early_stopping.best_loss
+                    self.early_stopping.best_loss = float("inf")
+                    self.early_stopping.counter = 0
+                    self.early_stopping.best_epoch = -1
+                    print(f"Reset early stopping (previous best: {old_best:.6f})")
+
+                # Reset LR and scheduler when K changes (common in curriculum learning)
+                old_lr = self.optimizer.param_groups[0]["lr"]
+                if self.config.rollout_reset_lr_on_k_change:
+                    for param_group in self.optimizer.param_groups:
+                        param_group["lr"] = self.config.learning_rate
+                    print(f"Reset LR: {old_lr:.2e} → {self.config.learning_rate:.2e}")
+
+                if self.scheduler is not None:
+                    self.scheduler = self._create_scheduler()
+                    if not self.config.rollout_reset_lr_on_k_change:
+                        print(f"Reset LR scheduler (LR unchanged: {old_lr:.2e})")
+
             epoch_start = time.time()
 
             train_losses = self.train_epoch()
@@ -436,9 +654,9 @@ class Trainer:
             mlflow.log_metric("learning_rate", current_lr, step=epoch)
 
             self.history["train_total"].append(train_losses["total"])
-            self.history["train_mse"].append(train_losses["mse"])
+            self.history["train_mse"].append(train_losses.get("mse", 0.0))
             self.history["val_total"].append(val_losses["total"])
-            self.history["val_mse"].append(val_losses["mse"])
+            self.history["val_mse"].append(val_losses.get("mse", 0.0))
             self.history["learning_rate"].append(current_lr)
 
             self.history["val_mse_density"].append(val_losses.get("mse_density", 0.0))
@@ -450,12 +668,12 @@ class Trainer:
             self.history["val_emitter_accuracy"].append(val_losses.get("emitter_density_accuracy", 0.0))
 
             if self.config.physics_loss.enable_divergence:
-                self.history["train_divergence"].append(train_losses["divergence"])
-                self.history["val_divergence"].append(val_losses["divergence"])
+                self.history["train_divergence"].append(train_losses.get("divergence", 0.0))
+                self.history["val_divergence"].append(val_losses.get("divergence", 0.0))
 
             if self.config.physics_loss.enable_gradient:
-                self.history["train_gradient"].append(train_losses["gradient"])
-                self.history["val_gradient"].append(val_losses["gradient"])
+                self.history["train_gradient"].append(train_losses.get("gradient", 0.0))
+                self.history["val_gradient"].append(val_losses.get("gradient", 0.0))
 
             print(
                 f"Epoch {epoch + 1}/{self.config.epochs} | "

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from config.config import PROJECT_ROOT_PATH, project_config
 from models.unet import ActType, NormType, UpsampleType
@@ -8,7 +8,7 @@ from models.unet import ActType, NormType, UpsampleType
 
 class PhysicsLossConfig(BaseModel):
     mse_weight: float = 1.0
-    divergence_weight: float = 0.05
+    divergence_weight: float = 0.005
     gradient_weight: float = 0.002
     emitter_weight: float = 0.15
 
@@ -26,7 +26,7 @@ class AugmentationConfig(BaseModel):
 
 
 class TrainingConfig(BaseModel):
-    batch_size: int = 8
+    batch_size: int = 4
     learning_rate: float = 0.0007
     epochs: int = 200
     device: str | None = "cuda"
@@ -45,15 +45,14 @@ class TrainingConfig(BaseModel):
     lr_scheduler_t_max: int = 100
 
     use_early_stopping: bool = True
-    early_stop_patience: int = 15
+    early_stop_patience: int = 10
     early_stop_min_delta: float = 0
 
     # Dataset settings
     npz_dir: Path = Path(PROJECT_ROOT_PATH / project_config.vdb_tools.npz_output_directory)
     normalize: bool = True
-    split_ratios: tuple[float, float, float] = (0.81, 0.19, 0)  # train, val, test - to change
+    split_ratios: tuple[float, float, float] = (0.80, 0.20, 0)  # train, val, test - to change
     split_seed: int = 42
-    fake_empty_pct: int = 15
     augmentation: AugmentationConfig = AugmentationConfig()
     preload_dataset: bool = True
 
@@ -77,8 +76,44 @@ class TrainingConfig(BaseModel):
 
     # Checkpoint settings
     checkpoint_dir: Path = Path(PROJECT_ROOT_PATH / project_config.models.pytorch_folder)
-    save_every_n_epochs: int = 10
-    keep_last_n_checkpoints: int = 5
+    save_every_n_epochs: int = 2
+    keep_last_n_checkpoints: int = 10
 
     # Physics-aware loss configuration
     physics_loss: PhysicsLossConfig = PhysicsLossConfig()
+
+    # Multi-step rollout training
+    rollout_schedule: dict[int, int] = {
+        0: 1,  # k1
+        4: 2,  # k2
+        8: 3,  # k3
+        12: 4,  # k4
+    }
+    rollout_steps: int = 1
+    rollout_weight_decay: float = 1.50  # not used if rollout_final_step_only is True
+    rollout_gradient_truncation: bool = False
+    rollout_reset_lr_on_k_change: bool = True
+    validation_use_rollout_k: bool = True
+    rollout_final_step_only: bool = False
+
+    @field_validator("rollout_schedule")
+    @classmethod
+    def validate_rollout_schedule(cls, v: dict[int, int]) -> dict[int, int]:
+        if not v:
+            raise ValueError("rollout_schedule cannot be empty")
+        if 0 not in v:
+            raise ValueError("rollout_schedule must contain epoch 0")
+        for epoch, K in v.items():
+            if epoch < 0:
+                raise ValueError(f"Epoch {epoch} must be >= 0")
+            if K < 1:
+                raise ValueError(f"K={K} at epoch {epoch} must be >= 1")
+        return v
+
+    @field_validator("rollout_steps")
+    @classmethod
+    def validate_rollout_steps(cls, v: int) -> int:
+        # add check is <= rollout_schedule lenght
+        if v < 1:
+            raise ValueError(f"rollout_steps must be >= 1, got {v}")
+        return v
