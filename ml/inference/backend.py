@@ -7,7 +7,7 @@ import onnxruntime as ort  # type: ignore[import-untyped]
 import torch
 from numpy.typing import NDArray
 
-from models.small_unet_full import SmallUNetFull, SmallUNetFullConfig
+from models.unet import UNet, UNetConfig
 
 Backend = Literal["pytorch", "onnx"]
 
@@ -30,7 +30,7 @@ class InferenceBackend(ABC):
 class PyTorchBackend(InferenceBackend):
     def __init__(self) -> None:
         self._device: str = "cpu"
-        self._model: SmallUNetFull | None = None
+        self._model: UNet | None = None
 
     def load_model(self, model_path: str | Path, device: str) -> None:
         self._device = device
@@ -53,8 +53,8 @@ class PyTorchBackend(InferenceBackend):
         use_residual = config.get("use_residual", True)
         bottleneck_blocks = config.get("bottleneck_blocks", 1)
 
-        self._model = SmallUNetFull(
-            cfg=SmallUNetFullConfig(
+        self._model = UNet(
+            cfg=UNetConfig(
                 in_channels=config["in_channels"],
                 out_channels=config["out_channels"],
                 base_channels=config["base_channels"],
@@ -84,13 +84,11 @@ class PyTorchBackend(InferenceBackend):
         if self._model is None:
             raise RuntimeError("Model not loaded. Call load_model first.")
 
-        # Convert numpy to torch, preserving device placement
         input_tensor = torch.from_numpy(input_data).float().to(self._device)
 
         with torch.no_grad():
             output_tensor = self._model(input_tensor)
 
-        # Convert back to numpy and move to CPU
         return cast("NDArray[np.float32]", output_tensor.cpu().numpy())
 
     @property
@@ -122,7 +120,6 @@ class ONNXBackend(InferenceBackend):
         session = ort.InferenceSession(str(model_path), sess_options=ort.SessionOptions(), providers=providers)
         self._session = session
 
-        # Get input and output names
         self._input_name = session.get_inputs()[0].name
         self._output_name = session.get_outputs()[0].name
 

@@ -13,6 +13,9 @@ from config import vdb_config
 PROJECT_ROOT = Path(__file__).parent.parent
 BLENDER_SCRIPT = Path(__file__).parent / "blender_scripts/create_random_simulation.py"
 
+NO_EMITTER_PCT = 0.15
+NO_COLLIDER_PCT = 0.50
+
 
 def check_cache_exists(cache_dir: Path) -> bool:
     if not cache_dir.exists():
@@ -27,7 +30,15 @@ def check_cache_exists(cache_dir: Path) -> bool:
 
 
 def generate_simulation(
-    sim_index: int, resolution: int, frames: int, output_base_dir: Path, blend_dir: Path, seed: int
+    sim_index: int,
+    resolution: int,
+    frames: int,
+    output_base_dir: Path,
+    blend_dir: Path,
+    seed: int,
+    collider_mode: str = "medium",
+    no_emitters: bool = False,
+    no_colliders: bool = False,
 ) -> tuple[bool, str]:
     cache_name = f"cache_{sim_index:04d}"
     resolution_dir = output_base_dir / str(resolution)
@@ -51,6 +62,9 @@ def generate_simulation(
         "output_dir": str(cache_dir.absolute()),
         "blend_output_dir": str(blend_resolution_dir.absolute()),
         "seed": seed,
+        "collider_mode": collider_mode,
+        "no_emitters": no_emitters,
+        "no_colliders": no_colliders,
     }
 
     blender_path = vdb_config.BLENDER_PATH
@@ -86,8 +100,12 @@ def generate_simulation(
 
 
 def worker_wrapper(task_args: tuple) -> tuple[int, bool, str]:
-    sim_index, resolution, frames, output_base_dir, blend_dir, seed = task_args
-    success, status = generate_simulation(sim_index, resolution, frames, output_base_dir, blend_dir, seed)
+    sim_index, resolution, frames, output_base_dir, blend_dir, seed, collider_mode, no_emitters, no_colliders = (
+        task_args
+    )
+    success, status = generate_simulation(
+        sim_index, resolution, frames, output_base_dir, blend_dir, seed, collider_mode, no_emitters, no_colliders
+    )
     return (sim_index, success, status)
 
 
@@ -153,7 +171,36 @@ def main() -> None:
         sim_index = args.start_index + i
         frames = random.randint(args.min_frames, args.max_frames)
         sim_seed = base_seed + sim_index
-        tasks.append((sim_index, args.resolution, frames, output_base_dir, blend_dir, sim_seed))
+
+        # Assign collider mode based on distribution
+        rand_val = random.random()
+        if rand_val < 0.20:
+            collider_mode = "simple"
+        elif rand_val < 0.80:
+            collider_mode = "medium"
+        else:
+            collider_mode = "complex"
+
+        # Determine if simulation should have no emitters
+        no_emitters = random.random() < NO_EMITTER_PCT
+        no_colliders = False
+        if no_emitters:
+            # Of no-emitter sims, NO_COLLIDER_PCT have no colliders (empty)
+            no_colliders = random.random() < NO_COLLIDER_PCT
+
+        tasks.append(
+            (
+                sim_index,
+                args.resolution,
+                frames,
+                output_base_dir,
+                blend_dir,
+                sim_seed,
+                collider_mode,
+                no_emitters,
+                no_colliders,
+            )
+        )
 
     with ProcessPoolExecutor(max_workers=args.workers) as executor:
         future_to_task = {executor.submit(worker_wrapper, task): task for task in tasks}

@@ -12,6 +12,7 @@ dependencies = [
     "onnxruntime-gpu>=1.23.2",
     "onnxscript>=0.5.6",
     "pillow>=12.0.0",
+    "psutil>=7.2.1",
     "pydantic-settings>=2.12.0",
     "pyyaml>=6.0.2",
     "torch>=2.9.1",
@@ -50,6 +51,7 @@ ignore = [
     "ANN401",   # allow Any in some cases
     "N806",     # ML is full of upper case names
     "N812",     # ML import is full of upper case names
+    "N803",     # I just like to have UPPERCASE sometimes
 ]
 
 [tool.mypy]
