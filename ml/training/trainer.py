@@ -63,22 +63,30 @@ class Trainer:
             enable_divergence=config.physics_loss.enable_divergence,
             enable_gradient=config.physics_loss.enable_gradient,
             enable_emitter=config.physics_loss.enable_emitter,
+            padding_mode=config.padding_mode,
         )
 
         self.scaler = GradScaler("cuda") if config.amp_enabled and device == "cuda" else None
 
         self.scheduler = self._create_scheduler() if config.use_lr_scheduler else None
+
+        # Use variant-specific checkpoint directory if variant is configured
+        if config.variant:
+            checkpoint_dir = config.checkpoint_dir_variant
+        else:
+            checkpoint_dir = config.checkpoint_dir / str(model.model_name)
+
         self.early_stopping = (
             EarlyStopping(
                 patience=config.early_stop_patience,
                 min_delta=config.early_stop_min_delta,
-                checkpoint_dir=self.config.checkpoint_dir / str(model.model_name),
+                checkpoint_dir=checkpoint_dir,
             )
             if config.use_early_stopping
             else None
         )
 
-        self.config.checkpoint_dir = self.config.checkpoint_dir / str(model.model_name)
+        self.config.checkpoint_dir = checkpoint_dir
         self.config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
         self.history: dict[str, list[float]] = {
@@ -269,6 +277,7 @@ class Trainer:
                         vely_pred,
                         dx=self.config.physics_loss.grid_spacing,
                         dy=self.config.physics_loss.grid_spacing,
+                        padding_mode=self.config.padding_mode,
                     )
 
                     batch_metrics["kinetic_energy"] = compute_kinetic_energy(velx_pred, vely_pred)
@@ -365,13 +374,6 @@ class Trainer:
             total_loss = total_loss / weight_sum
             averaged_dict = {k: v / weight_sum for k, v in loss_accumulator.items()}
             return total_loss, averaged_dict, final_pred
-
-    def _get_scheduled_rollout_steps(self, epoch: int) -> int:
-        scheduled_epochs = sorted(self.config.rollout_schedule.keys(), reverse=True)
-        for start_epoch in scheduled_epochs:
-            if epoch >= start_epoch:
-                return self.config.rollout_schedule[start_epoch]
-        return self.config.rollout_schedule[0]
 
     def _create_dataloader_with_rollout_steps(self, K: int, is_training: bool) -> DataLoader:
         # Check if we have indices
@@ -592,57 +594,13 @@ class Trainer:
 
     def train(self) -> None:
         print(f"Starting training for {self.config.epochs} epochs...")
-        print(f"Initial rollout steps: K={self.config.rollout_steps}")
-        print(f"Rollout schedule: {self.config.rollout_schedule}")
+        print(f"Rollout step: K={self.config.rollout_step}")
         if self.config.validation_use_rollout_k:
-            print("Validation will match training K (changes with schedule)")
+            print(f"Validation will match training K={self.config.rollout_step}")
         else:
             print("Validation will always use K=1 for consistent metrics")
 
         for epoch in range(self.config.epochs):
-            # Scheduled rollout: Update K based on epoch
-            new_K = self._get_scheduled_rollout_steps(epoch)
-            if new_K != self.config.rollout_steps:
-                old_K = self.config.rollout_steps
-                self.config.rollout_steps = new_K
-                print(f"\n{'=' * 60}")
-                print(f"SCHEDULED ROLLOUT UPDATE: K={old_K} → K={new_K} at epoch {epoch}")
-                print(f"{'=' * 60}")
-
-                # Recreate training dataloader with new K
-                if self.train_indices is not None:
-                    print(f"Recreating training dataloader with K={new_K}...")
-                    self.train_loader = self._create_dataloader_with_rollout_steps(new_K, is_training=True)
-                    print("Training dataloader recreated successfully")
-                else:
-                    print("WARNING: Cannot recreate training dataloader (train_indices not provided)")
-
-                # Recreate validation dataloader if it should match training K
-                if self.config.validation_use_rollout_k and self.val_indices is not None:
-                    print(f"Recreating validation dataloader with K={new_K}...")
-                    self.val_loader = self._create_dataloader_with_rollout_steps(new_K, is_training=False)
-                    print("Validation dataloader recreated successfully")
-
-                # Reset early stopping when K changes (new training regime)
-                if self.early_stopping is not None:
-                    old_best = self.early_stopping.best_loss
-                    self.early_stopping.best_loss = float("inf")
-                    self.early_stopping.counter = 0
-                    self.early_stopping.best_epoch = -1
-                    print(f"Reset early stopping (previous best: {old_best:.6f})")
-
-                # Reset LR and scheduler when K changes (common in curriculum learning)
-                old_lr = self.optimizer.param_groups[0]["lr"]
-                if self.config.rollout_reset_lr_on_k_change:
-                    for param_group in self.optimizer.param_groups:
-                        param_group["lr"] = self.config.learning_rate
-                    print(f"Reset LR: {old_lr:.2e} → {self.config.learning_rate:.2e}")
-
-                if self.scheduler is not None:
-                    self.scheduler = self._create_scheduler()
-                    if not self.config.rollout_reset_lr_on_k_change:
-                        print(f"Reset LR scheduler (LR unchanged: {old_lr:.2e})")
-
             epoch_start = time.time()
 
             train_losses = self.train_epoch()
@@ -784,6 +742,15 @@ class Trainer:
             "optimizer_state_dict": self.optimizer.state_dict(),
             "config": self.config.model_dump(),
         }
+
+        # Save variant metadata if available
+        if self.config.variant is not None:
+            checkpoint["variant_metadata"] = self.config.variant.model_dump()
+
+        # Save MLflow run ID if available
+        active_run = mlflow.active_run()
+        if active_run:
+            checkpoint["mlflow_run_id"] = active_run.info.run_id
 
         if self.scaler is not None:
             checkpoint["scaler_state_dict"] = self.scaler.state_dict()

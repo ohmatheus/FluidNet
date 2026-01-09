@@ -8,6 +8,7 @@ from PIL import Image
 
 from config.config import PROJECT_ROOT_PATH
 from inference.backend import InferenceBackend, ONNXBackend, PyTorchBackend
+from scripts.variant_manager import VariantManager
 
 
 def log_channel_stats(frame_idx: int, data: np.ndarray, label: str, log_file: TextIO) -> None:
@@ -93,12 +94,14 @@ def create_argument_parser() -> argparse.ArgumentParser:
         default="cuda" if torch.cuda.is_available() else "cpu",
         help="Device to run inference on (default: cuda if available, else cpu)",
     )
+
     parser.add_argument(
-        "--model-name",
+        "--variant",
         type=str,
-        default="Unet",
-        help="Model name (checkpoint folder name)",
+        required=True,
+        help="Variant name (e.g., K2_A) - auto-resolves checkpoint path",
     )
+
     parser.add_argument(
         "--num-frames",
         type=int,
@@ -121,7 +124,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
         "--output-dir",
         type=str,
         default=None,
-        help="Output directory for rendered frames (default: data/simple_infer_output)",
+        help="Output directory for rendered frames (default: data/simple_infer_output or variant-specific)",
     )
     return parser
 
@@ -131,24 +134,41 @@ def main() -> None:
 
     USE_GLOBAL_NORM = False
 
+    # Use variant manager to resolve paths
+    ml_root = Path(__file__).parent.parent
+    manager = VariantManager(
+        config_root=ml_root / "config",
+        checkpoints_dir=PROJECT_ROOT_PATH / "data/checkpoints"
+    )
+
+    # Build config to get variant metadata
+    config_dict = manager.build_config_with_inheritance(args.variant)
+    variant_meta = config_dict["_variant_metadata"]
+
+    # Get relative directory path
+    relative_dir = manager.get_variant_relative_dir(args.variant)
+    full_model_name = variant_meta["full_model_name"]
+
+    # Build paths mirroring variant folder structure
     if args.backend == "pytorch":
         backend: InferenceBackend = PyTorchBackend()
-        model_path = PROJECT_ROOT_PATH / f"data/checkpoints/{args.model_name}/best_model.pth"
+        model_path = PROJECT_ROOT_PATH / "data/checkpoints" / relative_dir / full_model_name / "best_model.pth"
     else:  # onnx
         backend = ONNXBackend()
-        model_path = PROJECT_ROOT_PATH / f"data/onnx/{args.model_name}.onnx"
+        model_path = PROJECT_ROOT_PATH / "data/onnx-export" / relative_dir / f"{full_model_name}.onnx"
+
+    # Default output directory mirrors checkpoint structure
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+    else:
+        output_dir = PROJECT_ROOT_PATH / "data/simple-infer-output" / relative_dir / full_model_name
 
     if not model_path.exists():
         raise FileNotFoundError(
             f"Model not found: {model_path}\n"
-            f"For PyTorch backend, ensure checkpoint exists in data/checkpoints/{args.model_name}/\n"
+            f"For PyTorch backend, ensure checkpoint exists.\n"
             f"For ONNX backend, run 'onnx-export' first to create the ONNX model."
         )
-
-    if args.output_dir:
-        output_dir = Path(args.output_dir)
-    else:
-        output_dir = PROJECT_ROOT_PATH / "data/simple_infer_output"
 
     print(f"Using backend: {args.backend}")
     print(f"Using device: {args.device}")
@@ -191,9 +211,9 @@ def main() -> None:
     collider_mask[y_start:y_end, x_start:x_end] = 1.0
 
     # Initialize density=1.0 in emitter region (but not where collider is)
-    initial_density_mask = (emitter_mask > 0) & (collider_mask == 0)
-    state_prev[0] = initial_density_mask.astype(np.float32)
-    state_current[0] = initial_density_mask.astype(np.float32)
+    #initial_density_mask = (emitter_mask > 0) & (collider_mask == 0)
+    #state_prev[0] = initial_density_mask.astype(np.float32)
+    #state_current[0] = initial_density_mask.astype(np.float32)
 
     print(f"\nStarting autoregressive rollout for {args.num_frames} frames...")
     print("Emitter mask: binary circle (1 inside, 0 outside) - static for all frames")
