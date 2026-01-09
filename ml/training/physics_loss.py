@@ -13,7 +13,7 @@ import torch.nn.functional as F
 
 
 def compute_spatial_gradients(
-    field: torch.Tensor, dx: float = 1.0, dy: float = 1.0
+    field: torch.Tensor, dx: float = 1.0, dy: float = 1.0, padding_mode: str = "zeros"
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Compute spatial gradients using central differences.
@@ -28,7 +28,9 @@ def compute_spatial_gradients(
     # Pad: left=1, right=1, top=1, bottom=1
     # Original shape: (B, C, H, W)
     # Padded shape: (B, C, H+2, W+2)
-    field_padded = F.pad(field, (1, 1, 1, 1), mode="replicate", value=0.0)  # "replicate" "constant"
+    # Note: F.pad uses "constant" for zeros, "replicate" for replicate, etc.
+    pad_mode = "constant" if padding_mode == "zeros" else padding_mode
+    field_padded = F.pad(field, (1, 1, 1, 1), mode=pad_mode, value=0.0 if pad_mode == "constant" else None)
 
     # X gradient (horizontal) - differences along width (last) dimension
     # Take slices [2:] and [:-2] which gives us (B, C, H+2, W)
@@ -46,12 +48,12 @@ def compute_spatial_gradients(
     return grad_x, grad_y
 
 
-def compute_divergence(velx: torch.Tensor, vely: torch.Tensor, dx: float = 1.0, dy: float = 1.0) -> torch.Tensor:
+def compute_divergence(velx: torch.Tensor, vely: torch.Tensor, dx: float = 1.0, dy: float = 1.0, padding_mode: str = "zeros") -> torch.Tensor:
     """
     Compute velocity divergence: ∇·v = ∂velx/∂x + ∂vely/∂y
     """
-    grad_vx_x, _ = compute_spatial_gradients(velx, dx, dy)
-    _, grad_vy_y = compute_spatial_gradients(vely, dx, dy)
+    grad_vx_x, _ = compute_spatial_gradients(velx, dx, dy, padding_mode)
+    _, grad_vy_y = compute_spatial_gradients(vely, dx, dy, padding_mode)
 
     assert grad_vx_x.shape == grad_vy_y.shape, f"Shape mismatch: {grad_vx_x.shape} vs {grad_vy_y.shape}"
 
@@ -66,13 +68,14 @@ def divergence_loss(
     dx: float = 1.0,
     dy: float = 1.0,
     eps: float = 1e-8,
+    padding_mode: str = "zeros",
 ) -> torch.Tensor:
     """
     Divergence-free constraint: ∇·v ≈ 0 in fluid regions.
 
     Excludes emitter regions (where mass is injected) and optionally collider regions.
     """
-    div = compute_divergence(velx, vely, dx, dy)
+    div = compute_divergence(velx, vely, dx, dy, padding_mode)
 
     # Create fluid region mask
     fluid_mask = (emitter_mask == 0.0).float()
@@ -96,13 +99,14 @@ def gradient_loss(
     density_target: torch.Tensor,
     dx: float = 1.0,
     dy: float = 1.0,
+    padding_mode: str = "zeros",
 ) -> torch.Tensor:
     """
     Gradient/edge preservation loss for density field.
     Helps preserve sharp smoke edges by matching spatial gradients.
     """
-    grad_pred_x, grad_pred_y = compute_spatial_gradients(density_pred, dx, dy)
-    grad_target_x, grad_target_y = compute_spatial_gradients(density_target, dx, dy)
+    grad_pred_x, grad_pred_y = compute_spatial_gradients(density_pred, dx, dy, padding_mode)
+    grad_target_x, grad_target_y = compute_spatial_gradients(density_target, dx, dy, padding_mode)
 
     loss_x = F.l1_loss(grad_pred_x, grad_target_x)
     loss_y = F.l1_loss(grad_pred_y, grad_target_y)
@@ -142,6 +146,7 @@ class PhysicsAwareLoss(nn.Module):
         enable_divergence: bool = True,
         enable_gradient: bool = True,
         enable_emitter: bool = True,
+        padding_mode: str = "zeros",
     ) -> None:
         super().__init__()
 
@@ -150,6 +155,7 @@ class PhysicsAwareLoss(nn.Module):
         self.gradient_weight = gradient_weight
         self.emitter_weight = emitter_weight
         self.grid_spacing = grid_spacing
+        self.padding_mode = padding_mode
 
         self.enable_divergence = enable_divergence
         self.enable_gradient = enable_gradient
@@ -187,6 +193,7 @@ class PhysicsAwareLoss(nn.Module):
                 collider_mask,
                 dx=self.grid_spacing,
                 dy=self.grid_spacing,
+                padding_mode=self.padding_mode,
             )
             loss_dict["divergence"] = loss_div.item()
 
@@ -197,6 +204,7 @@ class PhysicsAwareLoss(nn.Module):
                 density_target,
                 dx=self.grid_spacing,
                 dy=self.grid_spacing,
+                padding_mode=self.padding_mode,
             )
             loss_dict["gradient"] = loss_grad.item()
 
