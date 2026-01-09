@@ -11,7 +11,7 @@ models:
   default_index: 0
 
 simulation:
-  fps: 15.0
+  fps: 24.0
   grid_resolution: 128
   input_channels: 6      #[density, velx, vely, density-1, emitter_mask, collider_mask]
 
