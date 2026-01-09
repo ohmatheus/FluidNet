@@ -160,7 +160,7 @@ class Trainer:
             if self.scaler is not None:
                 with autocast(device_type=self.device):
                     if rollout_mode:
-                        loss, loss_dict = self._compute_rollout_loss(inputs, targets, masks)
+                        loss, loss_dict, _ = self._compute_rollout_loss(inputs, targets, masks)
                     else:
                         outputs = self.model(inputs)
                         loss, loss_dict = self.criterion(outputs, targets, inputs)
@@ -175,7 +175,7 @@ class Trainer:
                 self.scaler.update()
             else:
                 if rollout_mode:
-                    loss, loss_dict = self._compute_rollout_loss(inputs, targets, masks)
+                    loss, loss_dict, _ = self._compute_rollout_loss(inputs, targets, masks)
                 else:
                     outputs = self.model(inputs)
                     loss, loss_dict = self.criterion(outputs, targets, inputs)
@@ -228,17 +228,13 @@ class Trainer:
                 if self.scaler is not None:
                     with autocast(device_type=self.device):
                         if rollout_mode:
-                            loss, loss_dict = self._compute_rollout_loss(inputs, targets, masks)
-                            # For rollout mode, we skip detailed metrics (only track loss)
-                            outputs = None
+                            loss, loss_dict, outputs = self._compute_rollout_loss(inputs, targets, masks)
                         else:
                             outputs = self.model(inputs)
                             loss, loss_dict = self.criterion(outputs, targets, inputs)
                 else:
                     if rollout_mode:
-                        loss, loss_dict = self._compute_rollout_loss(inputs, targets, masks)
-                        # For rollout mode, we skip detailed metrics (only track loss)
-                        outputs = None
+                        loss, loss_dict, outputs = self._compute_rollout_loss(inputs, targets, masks)
                     else:
                         outputs = self.model(inputs)
                         loss, loss_dict = self.criterion(outputs, targets, inputs)
@@ -250,18 +246,23 @@ class Trainer:
                         loss_accumulators[key] = 0.0
                     loss_accumulators[key] += value
 
-                # Only compute detailed metrics for single-step mode
-                if not rollout_mode and outputs is not None:
+                if outputs is not None:
                     density_pred = outputs[:, 0, :, :]
                     velx_pred = outputs[:, 1, :, :]
                     vely_pred = outputs[:, 2, :, :]
 
-                    emitter_mask = inputs[:, 4, :, :]
-                    collider_mask = inputs[:, 5, :, :]
+                    if rollout_mode:
+                        target_for_metrics = targets[:, -1, :, :, :]
+                        emitter_mask = masks[:, -1, 0, :, :]
+                        collider_mask = masks[:, -1, 1, :, :]
+                    else:
+                        target_for_metrics = targets
+                        emitter_mask = inputs[:, 4, :, :]
+                        collider_mask = inputs[:, 5, :, :]
 
                     batch_metrics = {}
 
-                    batch_metrics.update(compute_per_channel_mse(outputs, targets))
+                    batch_metrics.update(compute_per_channel_mse(outputs, target_for_metrics))
 
                     batch_metrics["divergence_norm"] = compute_divergence_norm(
                         velx_pred,
@@ -283,7 +284,6 @@ class Trainer:
                 pbar.set_postfix({"loss": f"{loss.item():.6f}"})
 
         avg_losses = {key: value / num_batches for key, value in loss_accumulators.items()}
-
         avg_metrics = metrics_tracker.compute_averages()
 
         return {**avg_losses, **avg_metrics}
@@ -293,9 +293,10 @@ class Trainer:
         x_0: torch.Tensor,
         y_seq: torch.Tensor,
         masks: torch.Tensor,
-    ) -> tuple[torch.Tensor, dict[str, float]]:
+    ) -> tuple[torch.Tensor, dict[str, float], torch.Tensor]:
         """
         Compute loss for K-step autoregressive rollout.
+        Returns: (loss, loss_dict, final_output)
         """
         K = y_seq.shape[1]
 
@@ -313,7 +314,7 @@ class Trainer:
                 if k == K - 1:
                     target_final = y_seq[:, k, :, :, :]
                     final_loss, loss_dict = self.criterion(pred, target_final, model_input)
-                    return final_loss, loss_dict
+                    return final_loss, loss_dict, pred
 
                 if self.config.rollout_gradient_truncation:
                     state_prev = pred[:, 0:1, :, :].detach()
@@ -329,6 +330,7 @@ class Trainer:
             total_loss = torch.tensor(0.0, device=x_0.device)
             loss_accumulator: dict[str, float] = {}
             weight_sum = 0.0
+            final_pred: torch.Tensor
 
             for k in range(K):
                 emitter_k = masks[:, k, 0:1, :, :]
@@ -358,9 +360,11 @@ class Trainer:
                     state_prev = pred[:, 0:1, :, :]
                     state_current = pred
 
+                final_pred = pred
+
             total_loss = total_loss / weight_sum
             averaged_dict = {k: v / weight_sum for k, v in loss_accumulator.items()}
-            return total_loss, averaged_dict
+            return total_loss, averaged_dict, final_pred
 
     def _get_scheduled_rollout_steps(self, epoch: int) -> int:
         scheduled_epochs = sorted(self.config.rollout_schedule.keys(), reverse=True)
