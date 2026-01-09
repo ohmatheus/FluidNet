@@ -233,7 +233,7 @@ def _load_rollout_sample(
 
         # Build target sequence (frames t+1 to t+K)
         y_list = []
-        mask_list = []
+        mask_list = [np.stack([emitter_t, collider_t], axis=0)]  # Start with initial masks at time t
 
         for k in range(1, rollout_steps + 1):
             d_future = d[t + k]
@@ -258,7 +258,7 @@ def _load_rollout_sample(
 
         x_0 = np.stack([d_t, vx_t, vz_t, d_tminus, emitter_t, collider_t], axis=0)
         y_seq = np.stack(y_list, axis=0)  # (K, 3, H, W)
-        masks = np.stack(mask_list, axis=0)  # (K, 2, H, W)
+        masks = np.stack(mask_list, axis=0)  # (K+1, 2, H, W) - includes initial mask at t
 
     return torch.from_numpy(x_0), torch.from_numpy(y_seq), torch.from_numpy(masks)
 
