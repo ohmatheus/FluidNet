@@ -339,23 +339,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Train FluidNet with hierarchical multi-variant support",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Train single variant
-  python train_variant.py K1_A
-
-  # Train multiple variants with dependency resolution
-  python train_variant.py K1_A K1_B K2_A
-
-  # Train K3_C (auto-trains K1_C → K2_C → K3_C)
-  python train_variant.py K3_C
-
-  # Skip auto-inference
-  python train_variant.py K2_A --no-inference
-
-  # Force retrain even if checkpoint exists
-  python train_variant.py K1_A --force-retrain
-        """
+        epilog=""
     )
 
     parser.add_argument(
@@ -423,9 +407,16 @@ def main() -> None:
     if not args.force_retrain:
         filtered = []
         for v in variants_to_train:
-            if manager.check_checkpoint_exists(v):
-                print(f"Skipping {v} (checkpoint exists, use --force-retrain to override)")
+            is_explicitly_requested = v in args.variants
+
+            if is_explicitly_requested:
+                filtered.append(v)
+                if manager.check_checkpoint_exists(v):
+                    print(f"Retraining {v} (explicitly requested, checkpoint exists)")
+            elif manager.check_checkpoint_exists(v):
+                print(f"Skipping {v} (dependency checkpoint exists, use --force-retrain to override)")
             else:
+                # Train dependencies that don't have checkpoints
                 filtered.append(v)
         variants_to_train = filtered
 
