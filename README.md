@@ -56,49 +56,57 @@ graph LR
 
 ## Simulation Creation And Export
 
+Training data is generated through an automated pipeline:
+
+**1. Blender Simulation Generation**
+Headless Blender scripts create randomized fluid scenarios using Mantaflow, producing 3D volumetric data (VDB format) and mesh animations (Alembic format).
+
+**2. 3D to 2D Projection (vdb-tools)**
+Custom pipeline converts 3D simulations into 2D training data by projecting volumetric fields onto a plane and extracting relevant physics quantities (density, velocity, emitter/collider masks).
+
+**3. NPZ Dataset**
+Processed sequences are saved as compressed NPZ files, ready for PyTorch training. Each sample contains the current state, previous state, and boundary conditions to predict the next frame.
+
+#### Here you can see the projection result from Blender simulation to .npz converted to .png:
+
 <p align="center">
   <img src="assets/blend1.gif" alt="Blend1" width="450"/>
   &nbsp;&nbsp;&nbsp;
-  <img src="assets/npz1.gif" alt="Blend1" width="300"/>
+  <img src="assets/npz1.gif" alt="NPZ1" width="300"/>
 </p>
 
 <p align="center">
-  <img src="assets/blend2.gif" alt="Blend1" width="450"/>
+  <img src="assets/blend2.gif" alt="Blend2" width="450"/>
   &nbsp;&nbsp;&nbsp;
-  <img src="assets/npz2.gif" alt="Blend1" width="300"/>
+  <img src="assets/npz2.gif" alt="NPZ2" width="300"/>
 </p>
 
 <p align="center">
-  <img src="assets/blend3.gif" alt="Blend1" width="450"/>
+  <img src="assets/blend3.gif" alt="Blend3" width="450"/>
   &nbsp;&nbsp;&nbsp;
-  <img src="assets/npz3.gif" alt="Blend1" width="300"/>
+  <img src="assets/npz3.gif" alt="NPZ3" width="300"/>
 </p>
 
 ## Training & Model Architecture
 
-### UNet Architecture
-The model uses a compact encoder-decoder architecture with skip connections:
-- Instance normalization
-- GELU activation
-- Optimized for real-time performance but some choices has been made to keep a nice smoke behaviour.
+### Model
+A UNet-based encoder-decoder architecture with skip connections. Extensive experimentation with different configurations including depth, base channels, normalization layers, and activation functions.
+
+**Input/Output:**
+- **Input**: 6 channels (density_t, velx_t, velz_t, density_t-1, emitter_t, collider_t)
+- **Output**: 3 channels (density_t+1, velx_t+1, velz_t+1)
 
 ### Loss Functions
-Training uses multiple loss components to enforce physical realism:
+Training involved experimentation with multiple loss components:
+- **MSE Loss** - Standard reconstruction loss
+- **Divergence Penalty** - Enforces incompressibility (∇·v ≈ 0)
+- **Emitter Loss** - Prevents density generation in non-emitter regions
+- **Gradient Loss** - Preserves sharp density features
 
-**MSE Loss** - Standard reconstruction loss for accurate next-frame prediction.
+Different combinations and weightings were tested to balance visual quality and physical realism.
 
-**Divergence Penalty** - Enforces incompressibility constraint (∇·v ≈ 0) to prevent density spawning during rollout.
-
-**Emitter Loss** - Prevents density generation in non-emitter regions. Only allows density where emitters exist or density is already present. (Does not compete with smoke advection)
-
-**Gradient Loss** - Preserves sharp density features by matching spatial gradients between prediction and ground truth. (Create artifacts, compete with MSE)
-
-### Validation Metrics
-Physics-based metrics ensure the model respects fluid dynamics:
-- **Divergence norm**: Measures incompressibility
-- **Kinetic energy**: Monitors velocity stability over time
-- **Collider violation**: Checks for density inside colliders
-- **Emitter accuracy**: Validates emission rate correctness
+### Validation
+While physics-based metrics (divergence, kinetic energy, collider violations) were tracked during training, most validation came from exporting models and qualitatively evaluating autoregressive rollout behavior to "feel" the fluid dynamics.
 
 For complete training details, see [ml/README.md](ml/README.md).
 
@@ -132,18 +140,11 @@ For build instructions and usage details, see [engine/README.md](engine/README.m
 
 ## Getting Started
 
-### Quick Start
-1. Build the engine: Follow instructions in [engine/README.md](engine/README.md)
-2. Download a pre-trained ONNX model (or train your own)
-3. Place the `.onnx` file in `data/onnx/`
-4. Run: `./engine/build-release/fluid_engine`
+**Note:** This project is not yet packaged for easy public use. Pre-trained weights will be made available on HuggingFace in the future. However, if you're handy with build systems, everything should work - the engine can be built and trained models exported following the instructions in [engine/README.md](engine/README.md) and [ml/README.md](ml/README.md).
 
 ## Technical References
 
 This project builds on research in physics-informed neural networks and learned fluid simulation:
-
-- **Transolver: A Fast Transformer Solver for PDEs** ([arXiv:2412.10748](https://arxiv.org/pdf/2412.10748))
-  Recent work on learned PDE solvers using transformers.
 
 - **Awesome Neural Physics** ([Project Page](https://hhuiwangg.github.io/projects/awesome-neural-physics/))
   Curated collection of papers and resources on physics-informed machine learning.
@@ -156,3 +157,6 @@ This project builds on research in physics-informed neural networks and learned 
 
 - **Accelerating Eulerian Fluid Simulation with CNNs** ([ICML 2017](https://proceedings.mlr.press/v70/tompson17a/tompson17a.pdf))
   Foundational work on using CNNs to accelerate fluid solvers.
+
+- **Transolver: A Fast Transformer Solver for PDEs** ([arXiv:2412.10748](https://arxiv.org/pdf/2412.10748))
+  Recent work on learned PDE solvers using transformers. (Not used but cool paper)
