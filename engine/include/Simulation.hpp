@@ -21,8 +21,9 @@ public:
     void stop();
     void restart();
 
-    void setModel(const std::string& modelPath);
+    void setModel(const std::string& modelPath, bool forceReload = false);
     void toggleGpuMode();
+    bool isUsingCpu() const { return !m_useGpu; }
 
     const SimulationBuffer* getLatestState() const;
     float getAvgComputeTimeMs() const;
@@ -31,8 +32,8 @@ public:
 
 private:
     void workerLoop_();
-    void runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer* backBuf,
-                           const SceneMaskSnapshot* sceneSnapshot);
+    float runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer* backBuf,
+                            const SceneMaskSnapshot* sceneSnapshot);
     void initializeOnnxSession_(const std::string& modelPath, bool useGpu);
 
     std::unique_ptr<Ort::Env> m_ortEnv;
@@ -53,7 +54,6 @@ private:
 
     const std::atomic<SceneMaskSnapshot*>* m_sceneSnapshotPtr{nullptr};
 
-    // Timing metrics
     std::atomic<float> m_avgComputeTimeMs{0.0f};
     float m_sumComputeTimeMs{0.0f};
     int m_computeTimeSamples{0};

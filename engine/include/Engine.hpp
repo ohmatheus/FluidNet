@@ -8,6 +8,7 @@ namespace FluidNet
 
 class Scene;
 class ModelRegistry;
+enum class ModelPrecision;
 
 class Engine
 {
@@ -43,8 +44,9 @@ private:
     std::unique_ptr<Scene> m_currentScene;
     std::unique_ptr<ModelRegistry> m_modelRegistry;
 
-    // Timing
     double m_lastFrameTime{0.0};
+
+    ModelPrecision m_gpuPrecision;
 };
 
 }

@@ -7,7 +7,7 @@ vdb_tools:
 
 models:
   pytorch_folder: "./data/checkpoints/"
-  onnx_folder: "./data/onnx"
+  onnx_folder: "./data/onnx-export"
   default_index: 0
 
 simulation:
@@ -16,7 +16,7 @@ simulation:
   input_channels: 6      #[density, velx, vely, density-1, emitter_mask, collider_mask]
 
 engine:
-  window_width: 1050
+  window_width: 1250
   window_height: 820
   onnx_providers:
     - "CPUExecutionProvider"
