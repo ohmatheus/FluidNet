@@ -317,40 +317,40 @@ float Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer
             if (!outputTensors.empty())
             {
                 float* outputData = outputTensors[0].GetTensorMutableData<float>();
-            std::vector<int64_t> outputShape =
-                outputTensors[0].GetTensorTypeAndShapeInfo().GetShape();
+                std::vector<int64_t> outputShape =
+                    outputTensors[0].GetTensorTypeAndShapeInfo().GetShape();
 
-            if (outputShape.size() != 4 || outputShape[0] != 1 || outputShape[1] != 3 ||
-                outputShape[2] != gridRes || outputShape[3] != gridRes)
-            {
-                std::cerr << "Unexpected ONNX output shape: [";
-                for (size_t i = 0; i < outputShape.size(); ++i)
+                if (outputShape.size() != 4 || outputShape[0] != 1 || outputShape[1] != 3 ||
+                    outputShape[2] != gridRes || outputShape[3] != gridRes)
                 {
-                    std::cerr << outputShape[i] << (i + 1 < outputShape.size() ? "," : "");
+                    std::cerr << "Unexpected ONNX output shape: [";
+                    for (size_t i = 0; i < outputShape.size(); ++i)
+                    {
+                        std::cerr << outputShape[i] << (i + 1 < outputShape.size() ? "," : "");
+                    }
+                    std::cerr << "]\n";
+                    return 0.0f;
                 }
-                std::cerr << "]\n";
-                return 0.0f;
-            }
 
-            if (backBuf->density.size() != planeSize)
-            {
-                backBuf->density.resize(planeSize);
-            }
-            if (backBuf->velocityX.size() != planeSize)
-            {
-                backBuf->velocityX.resize(planeSize);
-            }
-            if (backBuf->velocityY.size() != planeSize)
-            {
-                backBuf->velocityY.resize(planeSize);
-            }
+                if (backBuf->density.size() != planeSize)
+                {
+                    backBuf->density.resize(planeSize);
+                }
+                if (backBuf->velocityX.size() != planeSize)
+                {
+                    backBuf->velocityX.resize(planeSize);
+                }
+                if (backBuf->velocityY.size() != planeSize)
+                {
+                    backBuf->velocityY.resize(planeSize);
+                }
 
-            for (size_t i = 0; i < planeSize; ++i)
-            {
-                backBuf->density[i] = outputData[0 * planeSize + i];   // density_{t+1}
-                backBuf->velocityX[i] = outputData[1 * planeSize + i]; // velx_{t+1}
-                backBuf->velocityY[i] = outputData[2 * planeSize + i]; // vely_{t+1}
-            }
+                for (size_t i = 0; i < planeSize; ++i)
+                {
+                    backBuf->density[i] = outputData[0 * planeSize + i];   // density_{t+1}
+                    backBuf->velocityX[i] = outputData[1 * planeSize + i]; // velx_{t+1}
+                    backBuf->velocityY[i] = outputData[2 * planeSize + i]; // vely_{t+1}
+                }
 
                 backBuf->frameNumber = frontBuf->frameNumber + 1;
                 backBuf->timestamp = glfwGetTime();
