@@ -1,14 +1,11 @@
 #include "FluidScene.hpp"
 #include "Config.hpp"
 #include "ModelRegistry.hpp"
+#include "Profiling.hpp"
 #include "SceneState.hpp"
 #include <GLFW/glfw3.h>
 #include <imgui.h>
 #include <iostream>
-
-#ifdef TRACY_ENABLE
-#include <tracy/Tracy.hpp>
-#endif
 
 namespace FluidNet
 {
@@ -70,9 +67,7 @@ void FluidScene::onShutdown()
 
 void FluidScene::onUpdate(float deltaTime)
 {
-#ifdef TRACY_ENABLE
-    ZoneScopedN("Scene Update");
-#endif
+    PROFILE_SCOPE_NAMED("Scene Update");
 
     if (m_simulation)
     {
@@ -89,9 +84,7 @@ void FluidScene::onUpdate(float deltaTime)
 
 void FluidScene::render()
 {
-#ifdef TRACY_ENABLE
-    ZoneScopedN("Scene Render");
-#endif
+    PROFILE_SCOPE_NAMED("Scene Render");
 
     if (m_renderer && m_latestState)
     {
@@ -111,9 +104,7 @@ void FluidScene::render()
 
 void FluidScene::onRenderUI()
 {
-#ifdef TRACY_ENABLE
-    ZoneScopedN("Fluid UI");
-#endif
+    PROFILE_SCOPE_NAMED("Fluid UI");
 
     ImGui::Begin("Fluid Simulation");
 

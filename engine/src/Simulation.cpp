@@ -1,14 +1,11 @@
 #include "Simulation.hpp"
 #include "Config.hpp"
+#include "Profiling.hpp"
 #include "SceneState.hpp"
 #include <GLFW/glfw3.h>
 #include <chrono>
 #include <filesystem>
 #include <iostream>
-
-#ifdef TRACY_ENABLE
-#include <tracy/Tracy.hpp>
-#endif
 
 namespace FluidNet
 {
@@ -161,23 +158,17 @@ void Simulation::setSceneSnapshot(const std::atomic<SceneMaskSnapshot*>* snapsho
 
 void Simulation::workerLoop_()
 {
-#ifdef TRACY_ENABLE
-    tracy::SetThreadName("Physics Thread");
-#endif
+    PROFILE_SET_THREAD_NAME("Physics Thread");
 
     using Clock = std::chrono::high_resolution_clock;
 
     while (m_running)
     {
-#ifdef TRACY_ENABLE
-        ZoneScopedN("Simulation Step");
-#endif
+        PROFILE_SCOPE_NAMED("Simulation Step");
 
         if (m_restartRequested.load(std::memory_order_acquire))
         {
-#ifdef TRACY_ENABLE
-            ZoneScopedN("Restart Handler");
-#endif
+            PROFILE_SCOPE_NAMED("Restart Handler");
             const auto& config = Config::getInstance();
             int resolution = config.getGridResolution();
 
@@ -212,10 +203,8 @@ void Simulation::workerLoop_()
             // After this call, backBuf will contain t+1
             float inferenceMs = runInferenceStep_(frontBuf, backBuf, sceneSnapshot);
 
-#ifdef TRACY_ENABLE
-            TracyPlot("Inference Time (ms)", inferenceMs);
-            TracyPlot("Target Step Time (ms)", m_targetStepTime * 1000.0f);
-#endif
+            PROFILE_PLOT("Inference Time (ms)", inferenceMs);
+            PROFILE_PLOT("Target Step Time (ms)", m_targetStepTime * 1000.0f);
 
             m_front.store(backBuf, std::memory_order_release);
             m_sumComputeTimeMs += inferenceMs;
@@ -247,9 +236,7 @@ void Simulation::workerLoop_()
 float Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer* backBuf,
                                     const SceneMaskSnapshot* sceneSnapshot)
 {
-#ifdef TRACY_ENABLE
-    ZoneScopedN("ONNX Inference Step");
-#endif
+    PROFILE_SCOPE_NAMED("ONNX Inference Step");
 
     using Clock = std::chrono::high_resolution_clock;
     float inferenceTimeMs = 0.0f;
@@ -265,10 +252,8 @@ float Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer
         std::vector<float> inputData(inputSize);
         Ort::Value inputTensor = Ort::Value(nullptr);
 
-#ifdef TRACY_ENABLE
         {
-            ZoneScopedN("Input Tensor Prep");
-#endif
+            PROFILE_SCOPE_NAMED("Input Tensor Prep");
             std::memcpy(&inputData[0 * planeSize], frontBuf->density.data(),
                         planeSize * sizeof(float));
             std::memcpy(&inputData[1 * planeSize], frontBuf->velocityX.data(),
@@ -304,9 +289,7 @@ float Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer
             auto memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
             inputTensor = Ort::Value::CreateTensor<float>(memoryInfo, inputData.data(), inputSize,
                                                           inputShape, 4);
-#ifdef TRACY_ENABLE
         }
-#endif
 
         Ort::AllocatorWithDefaultOptions allocator;
         auto inputName = m_ortSession->GetInputNameAllocated(0, allocator);
@@ -317,27 +300,20 @@ float Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer
 
         auto inferenceStart = Clock::now();
 
-#ifdef TRACY_ENABLE
         std::vector<Ort::Value> outputTensors;
         {
-            ZoneScopedN("ONNX Runtime Execute");
-            ZoneText("Model Inference", 15);
+            PROFILE_SCOPE_NAMED("ONNX Runtime Execute");
+            PROFILE_ZONE_TEXT("Model Inference", 15);
             outputTensors = m_ortSession->Run(Ort::RunOptions{nullptr}, inputNames, &inputTensor, 1,
                                               outputNames, 1);
         }
-#else
-        auto outputTensors = m_ortSession->Run(Ort::RunOptions{nullptr}, inputNames, &inputTensor, 1,
-                                               outputNames, 1);
-#endif
 
         auto inferenceEnd = Clock::now();
         inferenceTimeMs =
             std::chrono::duration<float, std::milli>(inferenceEnd - inferenceStart).count();
 
-#ifdef TRACY_ENABLE
         {
-            ZoneScopedN("Output Tensor Extract");
-#endif
+            PROFILE_SCOPE_NAMED("Output Tensor Extract");
             if (!outputTensors.empty())
             {
                 float* outputData = outputTensors[0].GetTensorMutableData<float>();
@@ -380,9 +356,7 @@ float Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer
                 backBuf->timestamp = glfwGetTime();
                 backBuf->isDirty = true;
             }
-#ifdef TRACY_ENABLE
         }
-#endif
     }
     catch (const std::exception& e)
     {

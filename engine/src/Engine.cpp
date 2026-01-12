@@ -3,6 +3,7 @@
 #include "FluidScene.hpp"
 #include "GLLoader.hpp"
 #include "ModelRegistry.hpp"
+#include "Profiling.hpp"
 #include "Scene.hpp"
 #include <GL/gl.h>
 #include <GL/glext.h>
@@ -11,10 +12,6 @@
 #include <chrono>
 #include <imgui.h>
 #include <iostream>
-
-#ifdef TRACY_ENABLE
-#include <tracy/Tracy.hpp>
-#endif
 
 namespace FluidNet
 {
@@ -99,21 +96,17 @@ void Engine::initialize()
 
 void Engine::run()
 {
-#ifdef TRACY_ENABLE
-    tracy::SetThreadName("Main Thread");
-#endif
+    PROFILE_SET_THREAD_NAME("Main Thread");
 
     while (!glfwWindowShouldClose(m_window))
     {
         renderFrame_();
 
-#ifdef TRACY_ENABLE
         FluidScene* fluidScene = dynamic_cast<FluidScene*>(m_currentScene.get());
         if (!fluidScene || fluidScene->isProfilingEnabled())
         {
-            FrameMark;
+            PROFILE_FRAME_MARK();
         }
-#endif
     }
 }
 
@@ -157,9 +150,7 @@ static const char* getPrecisionName(ModelPrecision precision)
 
 void Engine::renderEngineDebugWindow_(float deltaTime)
 {
-#ifdef TRACY_ENABLE
-    ZoneScopedN("Engine Debug UI");
-#endif
+    PROFILE_SCOPE_NAMED("Engine Debug UI");
 
     ImGui::Begin("Engine");
     ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
@@ -306,9 +297,7 @@ void Engine::renderEngineDebugWindow_(float deltaTime)
 
 void Engine::renderViewportWindow_()
 {
-#ifdef TRACY_ENABLE
-    ZoneScopedN("Viewport UI");
-#endif
+    PROFILE_SCOPE_NAMED("Viewport UI");
 
     ImGui::SetNextWindowSize(ImVec2(800.0f, 800.0f), ImGuiCond_Always);
     ImGui::Begin("Viewport");
@@ -351,9 +340,7 @@ void Engine::renderViewportWindow_()
 
 void Engine::renderFrame_()
 {
-#ifdef TRACY_ENABLE
-    ZoneScoped;
-#endif
+    PROFILE_SCOPE();
 
     double currentTime = glfwGetTime();
     float deltaTime = static_cast<float>(currentTime - m_lastFrameTime);
