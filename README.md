@@ -57,8 +57,10 @@ graph LR
 ## Simulation Creation And Export
 
 <p align="center">
-  <img src="assets/blend1.webm" alt="Blend1" width="800"/>
+  <img src="https://github.com/user-attachments/assets/6c8f675a-6384-4b6a-9bce-df3f44bab042" alt="Blend1" width="800"/>
 </p>
+
+[blend2.webm](https://github.com/user-attachments/assets/6c8f675a-6384-4b6a-9bce-df3f44bab042)
 
 ## Training & Model Architecture
 
