@@ -103,19 +103,17 @@ void Simulation::stop()
 
 void Simulation::restart()
 {
-    const auto& config = Config::getInstance();
-    int resolution = config.getGridResolution();
-
-    {
-        m_bufferA.allocate(resolution);
-        m_bufferB.allocate(resolution);
-
-        m_front.store(&m_bufferA, std::memory_order_release);
-    }
+    m_restartRequested.store(true, std::memory_order_release);
 }
 
-void Simulation::setModel(const std::string& modelPath)
+void Simulation::setModel(const std::string& modelPath, bool forceReload)
 {
+    if (!forceReload && modelPath == m_currentModelPath && m_ortSession != nullptr)
+    {
+        std::cout << "Model already loaded: " << modelPath << std::endl;
+        return;
+    }
+
     stop();
 
     try
@@ -137,7 +135,7 @@ void Simulation::toggleGpuMode()
 
     if (!m_currentModelPath.empty())
     {
-        setModel(m_currentModelPath);
+        setModel(m_currentModelPath, true); // Force reload with new provider
     }
 }
 
@@ -163,6 +161,24 @@ void Simulation::workerLoop_()
 
     while (m_running)
     {
+        if (m_restartRequested.load(std::memory_order_acquire))
+        {
+            const auto& config = Config::getInstance();
+            int resolution = config.getGridResolution();
+
+            m_bufferA.allocate(resolution);
+            m_bufferB.allocate(resolution);
+            m_front.store(&m_bufferA, std::memory_order_release);
+
+            m_sumComputeTimeMs = 0.0f;
+            m_computeTimeSamples = 0;
+            m_lastAvgUpdate = glfwGetTime();
+
+            m_restartRequested.store(false, std::memory_order_release);
+            std::cout << "Simulation restarted by worker thread" << std::endl;
+            continue;
+        }
+
         auto stepStart = Clock::now();
 
         if (m_ortSession)
@@ -179,15 +195,9 @@ void Simulation::workerLoop_()
             // frontBuf:  density(t), vel(t)
             // backBuf:   density(t-1)
             // After this call, backBuf will contain t+1
-            auto inferenceStart = Clock::now();
-            runInferenceStep_(frontBuf, backBuf, sceneSnapshot);
-            auto inferenceEnd = Clock::now();
+            float inferenceMs = runInferenceStep_(frontBuf, backBuf, sceneSnapshot);
 
             m_front.store(backBuf, std::memory_order_release);
-
-            // track compute time
-            float inferenceMs =
-                std::chrono::duration<float, std::milli>(inferenceEnd - inferenceStart).count();
             m_sumComputeTimeMs += inferenceMs;
             m_computeTimeSamples++;
 
@@ -214,9 +224,11 @@ void Simulation::workerLoop_()
     }
 }
 
-void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer* backBuf,
-                                   const SceneMaskSnapshot* sceneSnapshot)
+float Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer* backBuf,
+                                    const SceneMaskSnapshot* sceneSnapshot)
 {
+    using Clock = std::chrono::high_resolution_clock;
+    float inferenceTimeMs = 0.0f;
     int inputChannels = FluidNet::Config::getInstance().getInputChannels();
 
     try
@@ -271,8 +283,12 @@ void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer*
         const char* inputNames[] = {inputName.get()};
         const char* outputNames[] = {outputName.get()};
 
+        auto inferenceStart = Clock::now();
         auto outputTensors = m_ortSession->Run(Ort::RunOptions{nullptr}, inputNames, &inputTensor,
                                                1, outputNames, 1);
+        auto inferenceEnd = Clock::now();
+        inferenceTimeMs =
+            std::chrono::duration<float, std::milli>(inferenceEnd - inferenceStart).count();
 
         // Extract output: [1, 3, H, W] = [density_{t+1}, velx_{t+1}, vely_{t+1}]
         if (!outputTensors.empty())
@@ -290,10 +306,9 @@ void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer*
                     std::cerr << outputShape[i] << (i + 1 < outputShape.size() ? "," : "");
                 }
                 std::cerr << "]\n";
-                return;
+                return 0.0f;
             }
 
-            // Ensure buffers have correct size
             if (backBuf->density.size() != planeSize)
             {
                 backBuf->density.resize(planeSize);
@@ -314,7 +329,6 @@ void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer*
                 backBuf->velocityY[i] = outputData[2 * planeSize + i]; // vely_{t+1}
             }
 
-            // Metadata
             backBuf->frameNumber = frontBuf->frameNumber + 1;
             backBuf->timestamp = glfwGetTime(); // TODO: better timer
             backBuf->isDirty = true;
@@ -324,6 +338,8 @@ void Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer*
     {
         std::cerr << "Inference error: " << e.what() << std::endl;
     }
+
+    return inferenceTimeMs;
 }
 
 }

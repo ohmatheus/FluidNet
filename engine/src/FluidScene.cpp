@@ -29,7 +29,7 @@ void FluidScene::onInit()
     {
         const auto& initialModel = m_modelRegistry->getCurrentModel();
         std::cout << "Loading initial model: " << initialModel.name << std::endl;
-        m_simulation->setModel(initialModel.path);
+        m_simulation->setModel(initialModel.pathFP32);
     }
     else
     {

@@ -15,7 +15,10 @@
 namespace FluidNet
 {
 
-Engine::Engine() : m_modelRegistry(std::make_unique<ModelRegistry>()) {}
+Engine::Engine()
+    : m_modelRegistry(std::make_unique<ModelRegistry>()), m_gpuPrecision(ModelPrecision::FP32)
+{
+}
 
 Engine::~Engine()
 {
@@ -52,7 +55,6 @@ void Engine::initialize()
 
     glfwMakeContextCurrent(m_window);
 
-    // Load GL functions
     FluidNet::GL::loadGLFunctions();
 
     // no need for vsync
@@ -78,7 +80,7 @@ void Engine::initialize()
                   << std::endl;
         for (const auto& model : m_modelRegistry->getModels())
         {
-            std::cout << "  - " << model.name << " (" << model.path << ")" << std::endl;
+            std::cout << "  - " << model.name << " (" << model.pathFP32 << ")" << std::endl;
         }
     }
     catch (const std::exception& e)
@@ -122,6 +124,21 @@ void Engine::setupDockspace_()
     ImGui::End();
 }
 
+static const char* getPrecisionName(ModelPrecision precision)
+{
+    switch (precision)
+    {
+    case ModelPrecision::FP32:
+        return "FP32";
+    case ModelPrecision::FP16:
+        return "FP16";
+    case ModelPrecision::INT8:
+        return "INT8";
+    default:
+        return "Unknown";
+    }
+}
+
 void Engine::renderEngineDebugWindow_(float deltaTime)
 {
     ImGui::Begin("Engine");
@@ -133,24 +150,129 @@ void Engine::renderEngineDebugWindow_(float deltaTime)
         if (auto* sim = fluidScene->getSimulation())
         {
             ImGui::Text("Sim Compute: %.2f ms", sim->getAvgComputeTimeMs());
+
+            // Provider display
+            bool usingCpu = sim->isUsingCpu();
+            ImGui::Text("Provider: %s", usingCpu ? "CPU" : "CUDA");
+
+            // Precision combo (only for GPU, CPU auto-uses INT8)
+            if (!usingCpu)
+            {
+                ImGui::Separator();
+                ImGui::Text("GPU Precision:");
+
+                if (ImGui::BeginCombo("##Precision", getPrecisionName(m_gpuPrecision)))
+                {
+                    // Show available GPU precisions (FP32, FP16)
+                    const auto& models = m_modelRegistry->getModels();
+                    int currentIdx = m_modelRegistry->getCurrentIndex();
+                    auto availablePrecisions = m_modelRegistry->getAvailablePrecisions(currentIdx);
+
+                    for (ModelPrecision prec : availablePrecisions)
+                    {
+                        // Skip INT8 for GPU (it's CPU-only)
+                        if (prec == ModelPrecision::INT8)
+                            continue;
+
+                        bool selected = (prec == m_gpuPrecision);
+                        if (ImGui::Selectable(getPrecisionName(prec), selected))
+                        {
+                            if (prec != m_gpuPrecision)
+                            {
+                                m_gpuPrecision = prec;
+
+                                // Reload model with new precision
+                                std::string modelPath =
+                                    m_modelRegistry->getCurrentModelPath(m_gpuPrecision);
+                                fluidScene->onModelChanged(modelPath);
+                            }
+                        }
+                        if (selected)
+                        {
+                            ImGui::SetItemDefaultFocus();
+                        }
+                    }
+
+                    ImGui::EndCombo();
+                }
+            }
         }
     }
 
-    // Model selector
+    ImGui::Separator();
+
     if (!m_modelRegistry->getModels().empty())
     {
         const auto& models = m_modelRegistry->getModels();
         int currentIdx = m_modelRegistry->getCurrentIndex();
 
-        if (ImGui::BeginCombo("Model", models[currentIdx].name.c_str()))
+        if (ImGui::BeginCombo("Model", models[currentIdx].displayName.c_str()))
         {
+            std::string currentCategory = "";
+
             for (int i = 0; i < static_cast<int>(models.size()); ++i)
             {
-                bool selected = (i == currentIdx);
-                if (ImGui::Selectable(models[i].name.c_str(), selected))
+                if (models[i].relativeDir != currentCategory)
                 {
-                    m_modelRegistry->selectModel(i);
+                    if (i > 0)
+                    {
+                        ImGui::Separator();
+                    }
+
+                    if (!models[i].relativeDir.empty())
+                    {
+                        ImGui::TextDisabled("%s", models[i].relativeDir.c_str());
+                    }
+
+                    currentCategory = models[i].relativeDir;
                 }
+
+                bool selected = (i == currentIdx);
+
+                // Display with indentation for nested folders
+                int depth =
+                    std::count(models[i].relativeDir.begin(), models[i].relativeDir.end(), '/');
+                std::string indent(depth * 2, ' ');
+                std::string displayText = indent + models[i].name;
+
+                // Show precision indicators - May remove that
+                std::string precisionInfo;
+                if (models[i].hasFP16Variant && models[i].hasINT8Variant)
+                {
+                    precisionInfo = " [FP16+INT8]";
+                }
+                else if (models[i].hasFP16Variant)
+                {
+                    precisionInfo = " [FP16]";
+                }
+                else if (models[i].hasINT8Variant)
+                {
+                    precisionInfo = " [INT8]";
+                }
+                displayText += precisionInfo;
+
+                if (ImGui::Selectable(displayText.c_str(), selected))
+                {
+                    if (i != currentIdx)
+                    {
+                        m_modelRegistry->selectModel(i);
+
+                        if (auto* fluidScene = dynamic_cast<FluidScene*>(m_currentScene.get()))
+                        {
+                            if (auto* sim = fluidScene->getSimulation())
+                            {
+                                // Auto-select INT8 for CPU
+                                ModelPrecision targetPrecision =
+                                    sim->isUsingCpu() ? ModelPrecision::INT8 : m_gpuPrecision;
+
+                                std::string modelPath =
+                                    m_modelRegistry->getCurrentModelPath(targetPrecision);
+                                fluidScene->onModelChanged(modelPath);
+                            }
+                        }
+                    }
+                }
+
                 if (selected)
                 {
                     ImGui::SetItemDefaultFocus();
@@ -174,13 +296,10 @@ void Engine::renderViewportWindow_()
         {
             if (auto* renderer = fluidScene->getRenderer())
             {
-                // Resize framebuffer if viewport size changed
                 renderer->resizeFramebuffer((int)viewportSize.x, (int)viewportSize.y);
 
-                // Render to framebuffer
                 m_currentScene->render();
 
-                // Display framebuffer texture
                 GLuint texID = renderer->getFramebufferTexture();
                 ImGui::Image((ImTextureID)(intptr_t)texID, viewportSize, ImVec2(0, 1),
                              ImVec2(1, 0));
@@ -224,10 +343,8 @@ void Engine::renderFrame_()
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    // Setup dockspace
     setupDockspace_();
 
-    // Render UI windows
     renderEngineDebugWindow_(deltaTime);
 
     if (m_currentScene)
