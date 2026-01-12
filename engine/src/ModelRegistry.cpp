@@ -21,8 +21,7 @@ void ModelRegistry::initialize(const std::string& modelsFolder)
 
     for (const auto& entry : std::filesystem::recursive_directory_iterator(modelsFolder))
     {
-        if (entry.is_regular_file() &&
-            entry.path().extension() == ".onnx" &&
+        if (entry.is_regular_file() && entry.path().extension() == ".onnx" &&
             entry.path().string().find(".onnx.meta") == std::string::npos)
         {
             std::string stem = entry.path().stem().string();
@@ -75,7 +74,8 @@ void ModelRegistry::initialize(const std::string& modelsFolder)
 
     // Sort by relative directory first, then by name
     std::sort(m_models.begin(), m_models.end(),
-              [](const ModelInfo& a, const ModelInfo& b) {
+              [](const ModelInfo& a, const ModelInfo& b)
+              {
                   if (a.relativeDir != b.relativeDir)
                       return a.relativeDir < b.relativeDir;
                   return a.name < b.name;
@@ -124,23 +124,23 @@ std::string ModelRegistry::getModelPath(int index, ModelPrecision precision) con
 
     switch (precision)
     {
-        case ModelPrecision::FP16:
-            if (model.hasFP16Variant && !model.pathFP16.empty())
-            {
-                return model.pathFP16;
-            }
-            break;  // Fallback to FP32
+    case ModelPrecision::FP16:
+        if (model.hasFP16Variant && !model.pathFP16.empty())
+        {
+            return model.pathFP16;
+        }
+        break; // Fallback to FP32
 
-        case ModelPrecision::INT8:
-            if (model.hasINT8Variant && !model.pathINT8.empty())
-            {
-                return model.pathINT8;
-            }
-            break;  // Fallback to FP32
+    case ModelPrecision::INT8:
+        if (model.hasINT8Variant && !model.pathINT8.empty())
+        {
+            return model.pathINT8;
+        }
+        break; // Fallback to FP32
 
-        case ModelPrecision::FP32:
-        default:
-            break;  // Use FP32
+    case ModelPrecision::FP32:
+    default:
+        break; // Use FP32
     }
 
     return model.pathFP32;

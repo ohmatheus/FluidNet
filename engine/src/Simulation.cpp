@@ -135,7 +135,7 @@ void Simulation::toggleGpuMode()
 
     if (!m_currentModelPath.empty())
     {
-        setModel(m_currentModelPath, true);  // Force reload with new provider
+        setModel(m_currentModelPath, true); // Force reload with new provider
     }
 }
 

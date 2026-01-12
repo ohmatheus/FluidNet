@@ -23,7 +23,10 @@ public:
 
     void setModel(const std::string& modelPath, bool forceReload = false);
     void toggleGpuMode();
-    bool isUsingCpu() const { return !m_useGpu; }
+    bool isUsingCpu() const
+    {
+        return !m_useGpu;
+    }
 
     const SimulationBuffer* getLatestState() const;
     float getAvgComputeTimeMs() const;

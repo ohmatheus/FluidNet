@@ -15,7 +15,10 @@
 namespace FluidNet
 {
 
-Engine::Engine() : m_modelRegistry(std::make_unique<ModelRegistry>()), m_gpuPrecision(ModelPrecision::FP32) {}
+Engine::Engine()
+    : m_modelRegistry(std::make_unique<ModelRegistry>()), m_gpuPrecision(ModelPrecision::FP32)
+{
+}
 
 Engine::~Engine()
 {
@@ -125,10 +128,14 @@ static const char* getPrecisionName(ModelPrecision precision)
 {
     switch (precision)
     {
-        case ModelPrecision::FP32: return "FP32";
-        case ModelPrecision::FP16: return "FP16";
-        case ModelPrecision::INT8: return "INT8";
-        default: return "Unknown";
+    case ModelPrecision::FP32:
+        return "FP32";
+    case ModelPrecision::FP16:
+        return "FP16";
+    case ModelPrecision::INT8:
+        return "INT8";
+    default:
+        return "Unknown";
     }
 }
 
@@ -164,7 +171,8 @@ void Engine::renderEngineDebugWindow_(float deltaTime)
                     for (ModelPrecision prec : availablePrecisions)
                     {
                         // Skip INT8 for GPU (it's CPU-only)
-                        if (prec == ModelPrecision::INT8) continue;
+                        if (prec == ModelPrecision::INT8)
+                            continue;
 
                         bool selected = (prec == m_gpuPrecision);
                         if (ImGui::Selectable(getPrecisionName(prec), selected))
@@ -174,7 +182,8 @@ void Engine::renderEngineDebugWindow_(float deltaTime)
                                 m_gpuPrecision = prec;
 
                                 // Reload model with new precision
-                                std::string modelPath = m_modelRegistry->getCurrentModelPath(m_gpuPrecision);
+                                std::string modelPath =
+                                    m_modelRegistry->getCurrentModelPath(m_gpuPrecision);
                                 fluidScene->onModelChanged(modelPath);
                             }
                         }
@@ -221,8 +230,8 @@ void Engine::renderEngineDebugWindow_(float deltaTime)
                 bool selected = (i == currentIdx);
 
                 // Display with indentation for nested folders
-                int depth = std::count(models[i].relativeDir.begin(),
-                                       models[i].relativeDir.end(), '/');
+                int depth =
+                    std::count(models[i].relativeDir.begin(), models[i].relativeDir.end(), '/');
                 std::string indent(depth * 2, ' ');
                 std::string displayText = indent + models[i].name;
 
@@ -253,11 +262,11 @@ void Engine::renderEngineDebugWindow_(float deltaTime)
                             if (auto* sim = fluidScene->getSimulation())
                             {
                                 // Auto-select INT8 for CPU
-                                ModelPrecision targetPrecision = sim->isUsingCpu()
-                                    ? ModelPrecision::INT8
-                                    : m_gpuPrecision;
+                                ModelPrecision targetPrecision =
+                                    sim->isUsingCpu() ? ModelPrecision::INT8 : m_gpuPrecision;
 
-                                std::string modelPath = m_modelRegistry->getCurrentModelPath(targetPrecision);
+                                std::string modelPath =
+                                    m_modelRegistry->getCurrentModelPath(targetPrecision);
                                 fluidScene->onModelChanged(modelPath);
                             }
                         }
