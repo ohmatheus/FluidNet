@@ -22,6 +22,24 @@ set(YAML_BUILD_SHARED_LIBS OFF CACHE BOOL "Build yaml-cpp as static library")
 
 FetchContent_MakeAvailable(yaml-cpp)
 
+# Fetch Tracy profiler
+option(TRACY_ENABLE "Enable Tracy profiling" ON)
+option(TRACY_ON_DEMAND "Enable on-demand Tracy profiling" ON)
+
+if(TRACY_ENABLE)
+    FetchContent_Declare(
+        tracy
+        GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+        GIT_TAG v0.11.1
+        GIT_SHALLOW TRUE
+    )
+
+    set(TRACY_ON_DEMAND ${TRACY_ON_DEMAND} CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(tracy)
+
+    message(STATUS "Tracy profiling enabled (on-demand: ${TRACY_ON_DEMAND})")
+endif()
+
 # Fetch GLFW3 dependency
 FetchContent_Declare(
   glfw
@@ -156,4 +174,10 @@ target_link_libraries(fluid_engine PRIVATE
     imgui
     onnxruntime
     Threads::Threads
+    $<$<BOOL:${TRACY_ENABLE}>:TracyClient>
 )
+
+# Add Tracy compile definition
+if(TRACY_ENABLE)
+    target_compile_definitions(fluid_engine PRIVATE TRACY_ENABLE)
+endif()

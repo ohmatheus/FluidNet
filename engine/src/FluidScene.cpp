@@ -6,6 +6,10 @@
 #include <imgui.h>
 #include <iostream>
 
+#ifdef TRACY_ENABLE
+#include <tracy/Tracy.hpp>
+#endif
+
 namespace FluidNet
 {
 
@@ -66,6 +70,10 @@ void FluidScene::onShutdown()
 
 void FluidScene::onUpdate(float deltaTime)
 {
+#ifdef TRACY_ENABLE
+    ZoneScopedN("Scene Update");
+#endif
+
     if (m_simulation)
     {
         m_latestState = m_simulation->getLatestState();
@@ -81,6 +89,10 @@ void FluidScene::onUpdate(float deltaTime)
 
 void FluidScene::render()
 {
+#ifdef TRACY_ENABLE
+    ZoneScopedN("Scene Render");
+#endif
+
     if (m_renderer && m_latestState)
     {
         if (m_sceneState)
@@ -99,6 +111,10 @@ void FluidScene::render()
 
 void FluidScene::onRenderUI()
 {
+#ifdef TRACY_ENABLE
+    ZoneScopedN("Fluid UI");
+#endif
+
     ImGui::Begin("Fluid Simulation");
 
     if (m_latestState)
@@ -153,6 +169,20 @@ void FluidScene::onRenderUI()
 
     ImGui::Checkbox("Show Debug Info (D)", &m_showDebugInfo);
 
+#ifdef TRACY_ENABLE
+    if (ImGui::Checkbox("Enable Profiling (P)", &m_profilingEnabled))
+    {
+        std::cout << "Tracy profiling: " << (m_profilingEnabled ? "ENABLED" : "DISABLED")
+                  << std::endl;
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Toggle Tracy profiling on/off.\nPress 'P' or use this checkbox.");
+    }
+#endif
+
     if (m_showDebugInfo && m_latestState)
     {
         ImGui::Separator();
@@ -182,6 +212,7 @@ void FluidScene::onRenderUI()
     ImGui::BulletText("R: Restart simulation");
     ImGui::BulletText("Shift+R: Clear scene");
     ImGui::BulletText("Space: Pause/Resume");
+    ImGui::BulletText("P: Toggle profiling");
     ImGui::BulletText("ESC: Exit");
 
     ImGui::End();
@@ -258,6 +289,12 @@ void FluidScene::onKeyPress(int key, int scancode, int action, int mods)
 
     case GLFW_KEY_SPACE:
         togglePause();
+        break;
+
+    case GLFW_KEY_P:
+        m_profilingEnabled = !m_profilingEnabled;
+        std::cout << "Tracy profiling: " << (m_profilingEnabled ? "ENABLED" : "DISABLED")
+                  << std::endl;
         break;
     }
 }

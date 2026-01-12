@@ -6,6 +6,10 @@
 #include <filesystem>
 #include <iostream>
 
+#ifdef TRACY_ENABLE
+#include <tracy/Tracy.hpp>
+#endif
+
 namespace FluidNet
 {
 
@@ -157,12 +161,23 @@ void Simulation::setSceneSnapshot(const std::atomic<SceneMaskSnapshot*>* snapsho
 
 void Simulation::workerLoop_()
 {
+#ifdef TRACY_ENABLE
+    tracy::SetThreadName("Physics Thread");
+#endif
+
     using Clock = std::chrono::high_resolution_clock;
 
     while (m_running)
     {
+#ifdef TRACY_ENABLE
+        ZoneScopedN("Simulation Step");
+#endif
+
         if (m_restartRequested.load(std::memory_order_acquire))
         {
+#ifdef TRACY_ENABLE
+            ZoneScopedN("Restart Handler");
+#endif
             const auto& config = Config::getInstance();
             int resolution = config.getGridResolution();
 
@@ -197,6 +212,11 @@ void Simulation::workerLoop_()
             // After this call, backBuf will contain t+1
             float inferenceMs = runInferenceStep_(frontBuf, backBuf, sceneSnapshot);
 
+#ifdef TRACY_ENABLE
+            TracyPlot("Inference Time (ms)", inferenceMs);
+            TracyPlot("Target Step Time (ms)", m_targetStepTime * 1000.0f);
+#endif
+
             m_front.store(backBuf, std::memory_order_release);
             m_sumComputeTimeMs += inferenceMs;
             m_computeTimeSamples++;
@@ -227,6 +247,10 @@ void Simulation::workerLoop_()
 float Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer* backBuf,
                                     const SceneMaskSnapshot* sceneSnapshot)
 {
+#ifdef TRACY_ENABLE
+    ZoneScopedN("ONNX Inference Step");
+#endif
+
     using Clock = std::chrono::high_resolution_clock;
     float inferenceTimeMs = 0.0f;
     int inputChannels = FluidNet::Config::getInstance().getInputChannels();
@@ -235,47 +259,55 @@ float Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer
     {
         const int gridRes = frontBuf->gridResolution;
         const size_t planeSize = static_cast<size_t>(gridRes) * static_cast<size_t>(gridRes);
-
         const int64_t inputShape[] = {1, inputChannels, gridRes, gridRes};
         const size_t inputSize = inputChannels * planeSize;
 
         std::vector<float> inputData(inputSize);
+        Ort::Value inputTensor = Ort::Value(nullptr);
 
-        std::memcpy(&inputData[0 * planeSize], frontBuf->density.data(), planeSize * sizeof(float));
-        std::memcpy(&inputData[1 * planeSize], frontBuf->velocityX.data(),
-                    planeSize * sizeof(float));
-        std::memcpy(&inputData[2 * planeSize], frontBuf->velocityY.data(),
-                    planeSize * sizeof(float));
-        std::memcpy(&inputData[3 * planeSize], backBuf->density.data(), planeSize * sizeof(float));
-
-        if (sceneSnapshot && !sceneSnapshot->velocityImpulseX.empty() &&
-            !sceneSnapshot->velocityImpulseY.empty())
+#ifdef TRACY_ENABLE
         {
-            for (size_t i = 0; i < planeSize; ++i)
+            ZoneScopedN("Input Tensor Prep");
+#endif
+            std::memcpy(&inputData[0 * planeSize], frontBuf->density.data(),
+                        planeSize * sizeof(float));
+            std::memcpy(&inputData[1 * planeSize], frontBuf->velocityX.data(),
+                        planeSize * sizeof(float));
+            std::memcpy(&inputData[2 * planeSize], frontBuf->velocityY.data(),
+                        planeSize * sizeof(float));
+            std::memcpy(&inputData[3 * planeSize], backBuf->density.data(),
+                        planeSize * sizeof(float));
+
+            if (sceneSnapshot && !sceneSnapshot->velocityImpulseX.empty() &&
+                !sceneSnapshot->velocityImpulseY.empty())
             {
-                inputData[1 * planeSize + i] += sceneSnapshot->velocityImpulseX[i];
-                inputData[2 * planeSize + i] += sceneSnapshot->velocityImpulseY[i];
+                for (size_t i = 0; i < planeSize; ++i)
+                {
+                    inputData[1 * planeSize + i] += sceneSnapshot->velocityImpulseX[i];
+                    inputData[2 * planeSize + i] += sceneSnapshot->velocityImpulseY[i];
+                }
             }
-        }
 
-        if (sceneSnapshot && !sceneSnapshot->emitterMask.empty() &&
-            !sceneSnapshot->colliderMask.empty())
-        {
-            std::memcpy(&inputData[4 * planeSize], sceneSnapshot->emitterMask.data(),
-                        planeSize * sizeof(float));
-            std::memcpy(&inputData[5 * planeSize], sceneSnapshot->colliderMask.data(),
-                        planeSize * sizeof(float));
-        }
-        else
-        {
-            std::fill(&inputData[4 * planeSize], &inputData[6 * planeSize], 0.0f);
-        }
+            if (sceneSnapshot && !sceneSnapshot->emitterMask.empty() &&
+                !sceneSnapshot->colliderMask.empty())
+            {
+                std::memcpy(&inputData[4 * planeSize], sceneSnapshot->emitterMask.data(),
+                            planeSize * sizeof(float));
+                std::memcpy(&inputData[5 * planeSize], sceneSnapshot->colliderMask.data(),
+                            planeSize * sizeof(float));
+            }
+            else
+            {
+                std::fill(&inputData[4 * planeSize], &inputData[6 * planeSize], 0.0f);
+            }
 
-        auto memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-        Ort::Value inputTensor =
-            Ort::Value::CreateTensor<float>(memoryInfo, inputData.data(), inputSize, inputShape, 4);
+            auto memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+            inputTensor = Ort::Value::CreateTensor<float>(memoryInfo, inputData.data(), inputSize,
+                                                          inputShape, 4);
+#ifdef TRACY_ENABLE
+        }
+#endif
 
-        // Get input/output names
         Ort::AllocatorWithDefaultOptions allocator;
         auto inputName = m_ortSession->GetInputNameAllocated(0, allocator);
         auto outputName = m_ortSession->GetOutputNameAllocated(0, allocator);
@@ -284,16 +316,31 @@ float Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer
         const char* outputNames[] = {outputName.get()};
 
         auto inferenceStart = Clock::now();
-        auto outputTensors = m_ortSession->Run(Ort::RunOptions{nullptr}, inputNames, &inputTensor,
-                                               1, outputNames, 1);
+
+#ifdef TRACY_ENABLE
+        std::vector<Ort::Value> outputTensors;
+        {
+            ZoneScopedN("ONNX Runtime Execute");
+            ZoneText("Model Inference", 15);
+            outputTensors = m_ortSession->Run(Ort::RunOptions{nullptr}, inputNames, &inputTensor, 1,
+                                              outputNames, 1);
+        }
+#else
+        auto outputTensors = m_ortSession->Run(Ort::RunOptions{nullptr}, inputNames, &inputTensor, 1,
+                                               outputNames, 1);
+#endif
+
         auto inferenceEnd = Clock::now();
         inferenceTimeMs =
             std::chrono::duration<float, std::milli>(inferenceEnd - inferenceStart).count();
 
-        // Extract output: [1, 3, H, W] = [density_{t+1}, velx_{t+1}, vely_{t+1}]
-        if (!outputTensors.empty())
+#ifdef TRACY_ENABLE
         {
-            float* outputData = outputTensors[0].GetTensorMutableData<float>();
+            ZoneScopedN("Output Tensor Extract");
+#endif
+            if (!outputTensors.empty())
+            {
+                float* outputData = outputTensors[0].GetTensorMutableData<float>();
             std::vector<int64_t> outputShape =
                 outputTensors[0].GetTensorTypeAndShapeInfo().GetShape();
 
@@ -329,10 +376,13 @@ float Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer
                 backBuf->velocityY[i] = outputData[2 * planeSize + i]; // vely_{t+1}
             }
 
-            backBuf->frameNumber = frontBuf->frameNumber + 1;
-            backBuf->timestamp = glfwGetTime(); // TODO: better timer
-            backBuf->isDirty = true;
+                backBuf->frameNumber = frontBuf->frameNumber + 1;
+                backBuf->timestamp = glfwGetTime();
+                backBuf->isDirty = true;
+            }
+#ifdef TRACY_ENABLE
         }
+#endif
     }
     catch (const std::exception& e)
     {

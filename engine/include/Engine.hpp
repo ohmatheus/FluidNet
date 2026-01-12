@@ -31,6 +31,11 @@ public:
         return *m_modelRegistry;
     }
 
+    Scene* getCurrentScene()
+    {
+        return m_currentScene.get();
+    }
+
 private:
     void processInput_();
     void renderFrame_();

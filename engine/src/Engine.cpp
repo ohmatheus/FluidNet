@@ -12,6 +12,10 @@
 #include <imgui.h>
 #include <iostream>
 
+#ifdef TRACY_ENABLE
+#include <tracy/Tracy.hpp>
+#endif
+
 namespace FluidNet
 {
 
@@ -95,9 +99,21 @@ void Engine::initialize()
 
 void Engine::run()
 {
+#ifdef TRACY_ENABLE
+    tracy::SetThreadName("Main Thread");
+#endif
+
     while (!glfwWindowShouldClose(m_window))
     {
         renderFrame_();
+
+#ifdef TRACY_ENABLE
+        FluidScene* fluidScene = dynamic_cast<FluidScene*>(m_currentScene.get());
+        if (!fluidScene || fluidScene->isProfilingEnabled())
+        {
+            FrameMark;
+        }
+#endif
     }
 }
 
@@ -141,6 +157,10 @@ static const char* getPrecisionName(ModelPrecision precision)
 
 void Engine::renderEngineDebugWindow_(float deltaTime)
 {
+#ifdef TRACY_ENABLE
+    ZoneScopedN("Engine Debug UI");
+#endif
+
     ImGui::Begin("Engine");
     ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
     ImGui::Text("Frame Time: %.2f ms", deltaTime * 1000.0f);
@@ -286,6 +306,10 @@ void Engine::renderEngineDebugWindow_(float deltaTime)
 
 void Engine::renderViewportWindow_()
 {
+#ifdef TRACY_ENABLE
+    ZoneScopedN("Viewport UI");
+#endif
+
     ImGui::SetNextWindowSize(ImVec2(800.0f, 800.0f), ImGuiCond_Always);
     ImGui::Begin("Viewport");
     ImVec2 viewportSize = ImVec2(800.0f, 800.0f);
@@ -327,6 +351,10 @@ void Engine::renderViewportWindow_()
 
 void Engine::renderFrame_()
 {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+
     double currentTime = glfwGetTime();
     float deltaTime = static_cast<float>(currentTime - m_lastFrameTime);
     m_lastFrameTime = currentTime;
