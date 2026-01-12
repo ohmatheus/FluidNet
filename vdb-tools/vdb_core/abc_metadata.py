@@ -58,22 +58,25 @@ class AlembicMetadata:
         }
 
 
-def find_abc_for_cache(cache_dir: Path, blender_caches_root: Path) -> Path:
+def find_abc_for_cache(cache_dir: Path, blender_caches_root: Path) -> Path | None:
     cache_folder = cache_dir.parent
     cache_name = cache_folder.name
 
     abc_path = blender_caches_root / f"{cache_name}.abc"
 
-    assert abc_path.exists(), f"No Alembic file found for cache: {cache_name} (expected: {abc_path})"
-    assert abc_path.is_file(), f"No Alembic file found for cache: {cache_name} (expected: {abc_path})"
+    if not abc_path.exists() or not abc_path.is_file():
+        return None
 
     return abc_path
 
 
-def extract_abc_metadata(abc_path: Path, cache_name: str) -> AlembicMetadata:
+def extract_abc_metadata(abc_path: Path | None, cache_name: str) -> AlembicMetadata | None:
     """
     Extract complete metadata from an Alembic file using Blender.
     """
+    if abc_path is None:
+        return None
+
     script_dir = Path(__file__).parent.parent / "blender_scripts"
     blender_script_path = script_dir / "extract_alembic_metadata.py"
 

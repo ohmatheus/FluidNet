@@ -1,0 +1,10 @@
+rollout_step: 4
+variant_name: K4-Unet_medium-only_div_001-drop
+parent_variant: K3-Unet_medium-only_div_001-drop
+
+
+learning_rate: 0.0004
+epochs: 100
+lr_scheduler_patience: 4
+early_stop_patience: 10
+dropout: 0.2

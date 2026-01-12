@@ -13,7 +13,7 @@ import torch.nn.functional as F
 
 
 def compute_spatial_gradients(
-    field: torch.Tensor, dx: float = 1.0, dy: float = 1.0
+    field: torch.Tensor, dx: float = 1.0, dy: float = 1.0, padding_mode: str = "zeros"
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Compute spatial gradients using central differences.
@@ -28,7 +28,9 @@ def compute_spatial_gradients(
     # Pad: left=1, right=1, top=1, bottom=1
     # Original shape: (B, C, H, W)
     # Padded shape: (B, C, H+2, W+2)
-    field_padded = F.pad(field, (1, 1, 1, 1), mode="replicate")
+    # Note: F.pad uses "constant" for zeros, "replicate" for replicate, etc.
+    pad_mode = "constant" if padding_mode == "zeros" else padding_mode
+    field_padded = F.pad(field, (1, 1, 1, 1), mode=pad_mode, value=0.0 if pad_mode == "constant" else None)
 
     # X gradient (horizontal) - differences along width (last) dimension
     # Take slices [2:] and [:-2] which gives us (B, C, H+2, W)
@@ -46,12 +48,11 @@ def compute_spatial_gradients(
     return grad_x, grad_y
 
 
-def compute_divergence(velx: torch.Tensor, vely: torch.Tensor, dx: float = 1.0, dy: float = 1.0) -> torch.Tensor:
-    """
-    Compute velocity divergence: ∇·v = ∂velx/∂x + ∂vely/∂y
-    """
-    grad_vx_x, _ = compute_spatial_gradients(velx, dx, dy)
-    _, grad_vy_y = compute_spatial_gradients(vely, dx, dy)
+def compute_divergence(
+    velx: torch.Tensor, vely: torch.Tensor, dx: float = 1.0, dy: float = 1.0, padding_mode: str = "zeros"
+) -> torch.Tensor:
+    grad_vx_x, _ = compute_spatial_gradients(velx, dx, dy, padding_mode)
+    _, grad_vy_y = compute_spatial_gradients(vely, dx, dy, padding_mode)
 
     assert grad_vx_x.shape == grad_vy_y.shape, f"Shape mismatch: {grad_vx_x.shape} vs {grad_vy_y.shape}"
 
@@ -66,13 +67,14 @@ def divergence_loss(
     dx: float = 1.0,
     dy: float = 1.0,
     eps: float = 1e-8,
+    padding_mode: str = "zeros",
 ) -> torch.Tensor:
     """
     Divergence-free constraint: ∇·v ≈ 0 in fluid regions.
 
-    Excludes emitter regions (where mass is injected) and optionally collider regions.
+    Excludes emitter regions (where mass is injected) and collider regions.
     """
-    div = compute_divergence(velx, vely, dx, dy)
+    div = compute_divergence(velx, vely, dx, dy, padding_mode)
 
     # Create fluid region mask
     fluid_mask = (emitter_mask == 0.0).float()
@@ -96,13 +98,10 @@ def gradient_loss(
     density_target: torch.Tensor,
     dx: float = 1.0,
     dy: float = 1.0,
+    padding_mode: str = "zeros",
 ) -> torch.Tensor:
-    """
-    Gradient/edge preservation loss for density field.
-    Helps preserve sharp smoke edges by matching spatial gradients.
-    """
-    grad_pred_x, grad_pred_y = compute_spatial_gradients(density_pred, dx, dy)
-    grad_target_x, grad_target_y = compute_spatial_gradients(density_target, dx, dy)
+    grad_pred_x, grad_pred_y = compute_spatial_gradients(density_pred, dx, dy, padding_mode)
+    grad_target_x, grad_target_y = compute_spatial_gradients(density_target, dx, dy, padding_mode)
 
     loss_x = F.l1_loss(grad_pred_x, grad_target_x)
     loss_y = F.l1_loss(grad_pred_y, grad_target_y)
@@ -110,32 +109,42 @@ def gradient_loss(
     return loss_x + loss_y
 
 
-class PhysicsAwareLoss(nn.Module):
-    """
-    Combines:
-    - MSE reconstruction loss
-    - Divergence-free constraint (∇·v ≈ 0)
-    - Gradient preservation
-    """
+def emitter_spawn_loss(
+    density_pred: torch.Tensor,
+    density_current: torch.Tensor,
+    emitter_mask: torch.Tensor,
+    threshold: float = 0.01,
+) -> torch.Tensor:
+    allowed_mask = (emitter_mask > 0.01) | (density_current > threshold)
+    forbidden_density = density_pred * (~allowed_mask).float()
+    return forbidden_density.mean()
 
+
+class PhysicsAwareLoss(nn.Module):
     def __init__(
         self,
         mse_weight: float = 1.0,
         divergence_weight: float = 0.1,
         gradient_weight: float = 0.1,
+        emitter_weight: float = 0.1,
         grid_spacing: float = 1.0,
         enable_divergence: bool = True,
         enable_gradient: bool = True,
+        enable_emitter: bool = True,
+        padding_mode: str = "zeros",
     ) -> None:
         super().__init__()
 
         self.mse_weight = mse_weight
         self.divergence_weight = divergence_weight
         self.gradient_weight = gradient_weight
+        self.emitter_weight = emitter_weight
         self.grid_spacing = grid_spacing
+        self.padding_mode = padding_mode
 
         self.enable_divergence = enable_divergence
         self.enable_gradient = enable_gradient
+        self.enable_emitter = enable_emitter
 
         self.mse_loss = nn.MSELoss()
 
@@ -169,6 +178,7 @@ class PhysicsAwareLoss(nn.Module):
                 collider_mask,
                 dx=self.grid_spacing,
                 dy=self.grid_spacing,
+                padding_mode=self.padding_mode,
             )
             loss_dict["divergence"] = loss_div.item()
 
@@ -179,10 +189,26 @@ class PhysicsAwareLoss(nn.Module):
                 density_target,
                 dx=self.grid_spacing,
                 dy=self.grid_spacing,
+                padding_mode=self.padding_mode,
             )
             loss_dict["gradient"] = loss_grad.item()
 
-        total_loss = self.mse_weight * loss_mse + self.divergence_weight * loss_div + self.gradient_weight * loss_grad
+        loss_emitter = torch.tensor(0.0, device=outputs.device)
+        if self.enable_emitter and self.emitter_weight > 0:
+            density_pred_3d = outputs[:, 0:1, :, :]
+            density_current = inputs[:, 0:1, :, :]
+            emitter_mask_3d = inputs[:, 4:5, :, :]
+
+            loss_emitter = emitter_spawn_loss(density_pred_3d, density_current, emitter_mask_3d)
+
+            loss_dict["emitter"] = loss_emitter.item()
+
+        total_loss = (
+            self.mse_weight * loss_mse
+            + self.divergence_weight * loss_div
+            + self.gradient_weight * loss_grad
+            + self.emitter_weight * loss_emitter
+        )
 
         loss_dict["total"] = total_loss.item()
 

@@ -55,7 +55,7 @@ def main() -> None:
     for resolution_str in resolutions:
         resolution = int(resolution_str)
         cache_dir = blender_caches_root / resolution_str
-        output_dir = npz_output_root / resolution_str
+        output_dir = npz_output_root / f"{resolution_str}"
 
         if not cache_dir.exists():
             print(f"Warning: Resolution directory not found, skipping: {cache_dir}")

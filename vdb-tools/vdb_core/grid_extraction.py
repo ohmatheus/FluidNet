@@ -38,6 +38,10 @@ def get_bounding_box(grid: Any) -> BoundingBox | None:
             min_x, min_y, min_z = min_tuple
             max_x, max_y, max_z = max_tuple
 
+            # Check for empty/invalid bounds (min > max indicates no active voxels)
+            if min_x > max_x or min_y > max_y or min_z > max_z:
+                return None
+
             return BoundingBox(
                 min_x=min_x,
                 min_y=min_y,

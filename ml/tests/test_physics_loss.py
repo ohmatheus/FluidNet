@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from training.physics_loss import (
@@ -12,7 +13,7 @@ from training.physics_loss import (
 class TestGradientComputation:
     def test_constant_field_has_zero_gradient(self) -> None:
         field = torch.ones(2, 32, 32)
-        grad_x, grad_y = compute_spatial_gradients(field)
+        grad_x, grad_y = compute_spatial_gradients(field, padding_mode="replicate")
 
         assert torch.allclose(grad_x, torch.zeros_like(grad_x), atol=1e-6)
         assert torch.allclose(grad_y, torch.zeros_like(grad_y), atol=1e-6)
@@ -21,7 +22,7 @@ class TestGradientComputation:
         # Linear ramp in x direction: field[y, x] = x
         x_coords = torch.arange(32).float().unsqueeze(0).expand(32, 32)
         field = x_coords.unsqueeze(0).expand(2, -1, -1)
-        grad_x, grad_y = compute_spatial_gradients(field, dx=1.0, dy=1.0)
+        grad_x, grad_y = compute_spatial_gradients(field, dx=1.0, dy=1.0, padding_mode="replicate")
 
         # The gradient should be approximately 1.0 in x direction
         mean_grad_x = grad_x.mean().item()
@@ -47,7 +48,7 @@ class TestDivergence:
         velx = -y_coords.unsqueeze(0).expand(2, -1, -1)
         vely = x_coords.unsqueeze(0).expand(2, -1, -1)
 
-        div = compute_divergence(velx, vely, dx=1.0, dy=1.0)
+        div = compute_divergence(velx, vely, dx=1.0, dy=1.0, padding_mode="replicate")
 
         # Should be close to zero (numerical errors at boundaries)
         assert torch.abs(div).mean() < 0.1
@@ -59,7 +60,7 @@ class TestDivergence:
 
         # All emitter (should return zero loss)
         emitter_mask = torch.ones(2, 32, 32)
-        loss = divergence_loss(velx, vely, emitter_mask)
+        loss = divergence_loss(velx, vely, emitter_mask, padding_mode="replicate")
 
         assert torch.isclose(loss, torch.tensor(0.0), atol=1e-6)
 
@@ -73,7 +74,7 @@ class TestDivergence:
         vely = y_coords.unsqueeze(0).expand(2, -1, -1)
 
         emitter_mask = torch.zeros(2, 32, 32)
-        loss = divergence_loss(velx, vely, emitter_mask)
+        loss = divergence_loss(velx, vely, emitter_mask, padding_mode="replicate")
 
         assert loss > 0.0
 
@@ -83,7 +84,7 @@ class TestGradientLoss:
         density_pred = torch.randn(2, 64, 64)
         density_target = density_pred.clone()
 
-        loss = gradient_loss(density_pred, density_target)
+        loss = gradient_loss(density_pred, density_target, padding_mode="replicate")
 
         assert torch.isclose(loss, torch.tensor(0.0), atol=1e-6)
 
@@ -91,7 +92,7 @@ class TestGradientLoss:
         density_pred = torch.randn(2, 64, 64)
         density_target = torch.randn(2, 64, 64)
 
-        loss = gradient_loss(density_pred, density_target)
+        loss = gradient_loss(density_pred, density_target, padding_mode="replicate")
 
         assert loss > 0.0
 
@@ -153,3 +154,14 @@ class TestPhysicsAwareLoss:
         for key, value in loss_dict.items():
             assert not torch.isnan(torch.tensor(value)), f"{key} is NaN"
             assert not torch.isinf(torch.tensor(value)), f"{key} is Inf"
+
+
+@pytest.mark.parametrize("padding_mode", ["zeros", "replicate", "reflect"])
+def test_gradient_computation_with_padding_modes(padding_mode: str) -> None:
+    field = torch.randn(2, 32, 32)
+    grad_x, grad_y = compute_spatial_gradients(field, padding_mode=padding_mode)
+
+    assert grad_x.shape == field.shape
+    assert grad_y.shape == field.shape
+    assert torch.isfinite(grad_x).all()
+    assert torch.isfinite(grad_y).all()

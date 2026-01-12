@@ -3,14 +3,14 @@ import numpy as np
 from vdb_core.abc_metadata import AlembicMetadata, MeshMetadata, MeshTransform
 
 
-def validate_emitter_meshes(abc_metadata: AlembicMetadata) -> list[MeshMetadata]:
+def validate_emitter_meshes(abc_metadata: AlembicMetadata | None) -> list[MeshMetadata]:
+    if abc_metadata is None or not abc_metadata.meshes:
+        return []
+
     emitters = [m for m in abc_metadata.meshes if "Emitter" in m.name]
 
     if len(emitters) == 0:
-        available_meshes = [m.name for m in abc_metadata.meshes]
-        raise ValueError(
-            f"No mesh containing 'Emitter' in name found in Alembic metadata. Available meshes: {available_meshes}"
-        )
+        return []
 
     for emitter in emitters:
         if emitter.geometry_type not in ["Cube", "Sphere"]:
@@ -21,7 +21,10 @@ def validate_emitter_meshes(abc_metadata: AlembicMetadata) -> list[MeshMetadata]
     return emitters
 
 
-def validate_collider_meshes(abc_metadata: AlembicMetadata) -> list[MeshMetadata] | None:
+def validate_collider_meshes(abc_metadata: AlembicMetadata | None) -> list[MeshMetadata] | None:
+    if abc_metadata is None or not abc_metadata.meshes:
+        return None
+
     colliders = [m for m in abc_metadata.meshes if "Collider" in m.name]
 
     if len(colliders) == 0:

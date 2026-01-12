@@ -9,6 +9,7 @@ import torch.nn as nn
 NormType = Literal["none", "batch", "instance", "group"]
 ActType = Literal["relu", "leaky_relu", "gelu", "silu"]
 UpsampleType = Literal["nearest", "bilinear", "transpose"]
+PaddingType = Literal["zeros", "reflect", "replicate", "circular"]
 
 
 def _norm(norm: NormType, ch: int, groups: int) -> nn.Module:
@@ -23,7 +24,6 @@ def _norm(norm: NormType, ch: int, groups: int) -> nn.Module:
         while g > 1 and (ch % g) != 0:
             g -= 1
         return nn.GroupNorm(g, ch)
-    raise ValueError(f"unknown norm: {norm}")
 
 
 def _act(act: ActType) -> nn.Module:
@@ -35,7 +35,6 @@ def _act(act: ActType) -> nn.Module:
         return nn.GELU()
     if act == "silu":
         return nn.SiLU(inplace=True)
-    raise ValueError(f"unknown act: {act}")
 
 
 class ConvBlock(nn.Module):
@@ -48,13 +47,14 @@ class ConvBlock(nn.Module):
         act: ActType,
         groups: int,
         dropout: float,
+        padding_mode: PaddingType = "zeros",
     ) -> None:
         super().__init__()
-        self.c1 = nn.Conv2d(in_ch, out_ch, 3, padding=1, bias=(norm == "none"))
+        self.c1 = nn.Conv2d(in_ch, out_ch, 3, padding=1, padding_mode=padding_mode, bias=(norm == "none"))
         self.n1 = _norm(norm, out_ch, groups)
         self.a1 = _act(act)
 
-        self.c2 = nn.Conv2d(out_ch, out_ch, 3, padding=1, bias=(norm == "none"))
+        self.c2 = nn.Conv2d(out_ch, out_ch, 3, padding=1, padding_mode=padding_mode, bias=(norm == "none"))
         self.n2 = _norm(norm, out_ch, groups)
         self.a2 = _act(act)
 
@@ -76,9 +76,10 @@ class ResBlock(nn.Module):
         act: ActType,
         groups: int,
         dropout: float,
+        padding_mode: PaddingType = "zeros",
     ) -> None:
         super().__init__()
-        self.b = ConvBlock(ch, ch, norm=norm, act=act, groups=groups, dropout=dropout)
+        self.b = ConvBlock(ch, ch, norm=norm, act=act, groups=groups, dropout=dropout, padding_mode=padding_mode)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return cast("torch.Tensor", x + self.b(x))
@@ -95,13 +96,18 @@ class Down(nn.Module):
         groups: int,
         dropout: float,
         use_residual: bool,
+        padding_mode: PaddingType = "zeros",
     ) -> None:
         super().__init__()
-        self.block = ConvBlock(in_ch, out_ch, norm=norm, act=act, groups=groups, dropout=dropout)
-        self.res = (
-            ResBlock(out_ch, norm=norm, act=act, groups=groups, dropout=dropout) if use_residual else nn.Identity()
+        self.block = ConvBlock(
+            in_ch, out_ch, norm=norm, act=act, groups=groups, dropout=dropout, padding_mode=padding_mode
         )
-        self.down = nn.Conv2d(out_ch, out_ch, 3, stride=2, padding=1)
+        self.res = (
+            ResBlock(out_ch, norm=norm, act=act, groups=groups, dropout=dropout, padding_mode=padding_mode)
+            if use_residual
+            else nn.Identity()
+        )
+        self.down = nn.Conv2d(out_ch, out_ch, 3, stride=2, padding=1, padding_mode=padding_mode)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         x = self.block(x)
@@ -124,6 +130,7 @@ class Up(nn.Module):
         groups: int,
         dropout: float,
         use_residual: bool,
+        padding_mode: PaddingType = "zeros",
     ) -> None:
         super().__init__()
 
@@ -138,9 +145,13 @@ class Up(nn.Module):
                 align_corners=False if upsample == "bilinear" else None,
             )
 
-        self.block = ConvBlock(in_ch + skip_ch, out_ch, norm=norm, act=act, groups=groups, dropout=dropout)
+        self.block = ConvBlock(
+            in_ch + skip_ch, out_ch, norm=norm, act=act, groups=groups, dropout=dropout, padding_mode=padding_mode
+        )
         self.res = (
-            ResBlock(out_ch, norm=norm, act=act, groups=groups, dropout=dropout) if use_residual else nn.Identity()
+            ResBlock(out_ch, norm=norm, act=act, groups=groups, dropout=dropout, padding_mode=padding_mode)
+            if use_residual
+            else nn.Identity()
         )
 
     def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
@@ -160,7 +171,7 @@ class Up(nn.Module):
 
 
 @dataclass(frozen=True)
-class SmallUNetFullConfig:
+class UNetConfig:
     in_channels: int = 7
     out_channels: int = 3
 
@@ -173,25 +184,29 @@ class SmallUNetFullConfig:
     dropout: float = 0.0
 
     upsample: UpsampleType = "nearest"
+    padding_mode: PaddingType = "zeros"
     use_residual: bool = False
     bottleneck_blocks: int = 1
+    output_activation: bool = True
 
 
-class SmallUNetFull(nn.Module):
+class UNet(nn.Module):
     """
-    More configurable U-Net (still ONNX-friendly).
+    U-Net ONNX-friendly.
     """
 
-    model_name: str = "SmallUnetFull"
+    model_name: str = "Unet"
 
-    def __init__(self, cfg: SmallUNetFullConfig | None = None) -> None:
+    def __init__(self, cfg: UNetConfig | None = None) -> None:
         super().__init__()
-        self.cfg = cfg or SmallUNetFullConfig()
+        self.cfg = cfg or UNetConfig()
 
         if self.cfg.depth < 1:
             raise ValueError("depth must be >= 1")
 
-        self.stem = nn.Conv2d(self.cfg.in_channels, self.cfg.base_channels, 3, padding=1)
+        self.stem = nn.Conv2d(
+            self.cfg.in_channels, self.cfg.base_channels, 3, padding=1, padding_mode=self.cfg.padding_mode
+        )
 
         downs: list[nn.Module] = []
         skip_chs: list[int] = []
@@ -207,6 +222,7 @@ class SmallUNetFull(nn.Module):
                     groups=self.cfg.group_norm_groups,
                     dropout=self.cfg.dropout,
                     use_residual=self.cfg.use_residual,
+                    padding_mode=self.cfg.padding_mode,
                 )
             )
             skip_chs.append(out_ch)
@@ -222,6 +238,7 @@ class SmallUNetFull(nn.Module):
                     act=self.cfg.act,
                     groups=self.cfg.group_norm_groups,
                     dropout=self.cfg.dropout,
+                    padding_mode=self.cfg.padding_mode,
                 )
             )
         self.mid = nn.Sequential(*mids) if mids else nn.Identity()
@@ -241,6 +258,7 @@ class SmallUNetFull(nn.Module):
                     groups=self.cfg.group_norm_groups,
                     dropout=self.cfg.dropout,
                     use_residual=self.cfg.use_residual,
+                    padding_mode=self.cfg.padding_mode,
                 )
             )
             ch = out_ch
@@ -261,7 +279,14 @@ class SmallUNetFull(nn.Module):
         for up, skip in zip(self.ups, reversed(skips), strict=True):
             x = cast("Up", up)(x, skip)
 
-        return cast("torch.Tensor", self.head(x))
+        x = self.head(x)
+
+        if self.cfg.output_activation:
+            density = torch.sigmoid(x[:, 0:1, :, :])
+            velocity = torch.tanh(x[:, 1:3, :, :])
+            return torch.cat([density, velocity], dim=1)
+
+        return cast("torch.Tensor", x)
 
 
-__all__ = ["SmallUNetFull", "SmallUNetFullConfig"]
+__all__ = ["UNet", "UNetConfig", "PaddingType"]

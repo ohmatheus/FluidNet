@@ -14,7 +14,9 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau, StepL
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from config.config import PROJECT_ROOT_PATH, project_config
 from config.training_config import TrainingConfig
+from dataset.npz_sequence import FluidNPZSequenceDataset
 from training.early_stopping import EarlyStopping
 from training.metrics import (
     MetricsTracker,
@@ -35,6 +37,8 @@ class Trainer:
         val_loader: DataLoader,
         config: TrainingConfig,
         device: str,
+        train_indices: list[int] | None = None,
+        val_indices: list[int] | None = None,
     ) -> None:
         self.model = model
         self.train_loader = train_loader
@@ -42,30 +46,47 @@ class Trainer:
         self.config = config.model_copy()
         self.device = device
 
+        # Store indices for dataloader recreation during scheduled rollout
+        self.train_indices = train_indices
+        self.val_indices = val_indices
+
+        self.gradient_clip_norm = config.gradient_clip_norm
+        self.gradient_clip_enabled = config.gradient_clip_enabled
+
         self.optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
         self.criterion = PhysicsAwareLoss(
             mse_weight=config.physics_loss.mse_weight,
             divergence_weight=config.physics_loss.divergence_weight,
             gradient_weight=config.physics_loss.gradient_weight,
+            emitter_weight=config.physics_loss.emitter_weight,
             grid_spacing=config.physics_loss.grid_spacing,
             enable_divergence=config.physics_loss.enable_divergence,
             enable_gradient=config.physics_loss.enable_gradient,
+            enable_emitter=config.physics_loss.enable_emitter,
+            padding_mode=config.padding_mode,
         )
 
         self.scaler = GradScaler("cuda") if config.amp_enabled and device == "cuda" else None
 
         self.scheduler = self._create_scheduler() if config.use_lr_scheduler else None
+
+        # Use variant-specific checkpoint directory if variant is configured
+        if config.variant:
+            checkpoint_dir = config.checkpoint_dir_variant
+        else:
+            checkpoint_dir = config.checkpoint_dir / str(model.model_name)
+
         self.early_stopping = (
             EarlyStopping(
                 patience=config.early_stop_patience,
                 min_delta=config.early_stop_min_delta,
-                checkpoint_dir=self.config.checkpoint_dir / str(model.model_name),
+                checkpoint_dir=checkpoint_dir,
             )
             if config.use_early_stopping
             else None
         )
 
-        self.config.checkpoint_dir = self.config.checkpoint_dir / str(model.model_name)
+        self.config.checkpoint_dir = checkpoint_dir
         self.config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
         self.history: dict[str, list[float]] = {
@@ -90,6 +111,10 @@ class Trainer:
         if self.config.physics_loss.enable_gradient:
             self.history["train_gradient"] = []
             self.history["val_gradient"] = []
+
+        if self.config.physics_loss.enable_emitter:
+            self.history["train_emitter"] = []
+            self.history["val_emitter"] = []
 
     def _create_scheduler(self) -> Any:
         if self.config.lr_scheduler_type == "plateau":
@@ -121,32 +146,57 @@ class Trainer:
         num_batches = 0
 
         pbar = tqdm(self.train_loader, desc="Training", leave=False)
-        for inputs, targets in pbar:
-            # Move data to device
-            inputs = inputs.to(self.device, non_blocking=True)
-            targets = targets.to(self.device, non_blocking=True)
+        for batch_data in pbar:
+            # Detect rollout mode based on batch structure
+            if len(batch_data) == 3:
+                # Rollout mode: (x_0, y_seq, masks)
+                inputs, targets, masks = batch_data
+                inputs = inputs.to(self.device, non_blocking=True)
+                targets = targets.to(self.device, non_blocking=True)
+                masks = masks.to(self.device, non_blocking=True)
+                rollout_mode = True
+            else:
+                # Single-step mode: (x, y)
+                inputs, targets = batch_data
+                inputs = inputs.to(self.device, non_blocking=True)
+                targets = targets.to(self.device, non_blocking=True)
+                rollout_mode = False
 
             self.optimizer.zero_grad()
 
-            # Forward pass with AMP
+            # AMP
             if self.scaler is not None:
                 with autocast(device_type=self.device):
-                    outputs = self.model(inputs)
-                    loss, loss_dict = self.criterion(outputs, targets, inputs)
+                    if rollout_mode:
+                        loss, loss_dict, _ = self._compute_rollout_loss(inputs, targets, masks)
+                    else:
+                        outputs = self.model(inputs)
+                        loss, loss_dict = self.criterion(outputs, targets, inputs)
 
-                # Backward pass with gradient scaling
                 self.scaler.scale(loss).backward()
+
+                if self.gradient_clip_enabled:
+                    self.scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_norm)
+
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
             else:
-                outputs = self.model(inputs)
-                loss, loss_dict = self.criterion(outputs, targets, inputs)
+                if rollout_mode:
+                    loss, loss_dict, _ = self._compute_rollout_loss(inputs, targets, masks)
+                else:
+                    outputs = self.model(inputs)
+                    loss, loss_dict = self.criterion(outputs, targets, inputs)
+
                 loss.backward()
+
+                if self.gradient_clip_enabled:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_norm)
+
                 self.optimizer.step()
 
             num_batches += 1
 
-            # Accumulate individual loss components
             for key, value in loss_dict.items():
                 if key not in loss_accumulators:
                     loss_accumulators[key] = 0.0
@@ -166,60 +216,196 @@ class Trainer:
 
         with torch.no_grad():
             pbar = tqdm(self.val_loader, desc="Validation", leave=False)
-            for inputs, targets in pbar:
-                # Move data to device
-                inputs = inputs.to(self.device, non_blocking=True)
-                targets = targets.to(self.device, non_blocking=True)
+            for batch_data in pbar:
+                # Detect rollout mode based on batch structure
+                if len(batch_data) == 3:
+                    # Rollout mode: (x_0, y_seq, masks)
+                    inputs, targets, masks = batch_data
+                    inputs = inputs.to(self.device, non_blocking=True)
+                    targets = targets.to(self.device, non_blocking=True)
+                    masks = masks.to(self.device, non_blocking=True)
+                    rollout_mode = True
+                else:
+                    # Single-step mode: (x, y)
+                    inputs, targets = batch_data
+                    inputs = inputs.to(self.device, non_blocking=True)
+                    targets = targets.to(self.device, non_blocking=True)
+                    rollout_mode = False
 
-                outputs = self.model(inputs)
-                loss, loss_dict = self.criterion(outputs, targets, inputs)
+                # Compute loss (with or without AMP)
+                if self.scaler is not None:
+                    with autocast(device_type=self.device):
+                        if rollout_mode:
+                            loss, loss_dict, outputs = self._compute_rollout_loss(inputs, targets, masks)
+                        else:
+                            outputs = self.model(inputs)
+                            loss, loss_dict = self.criterion(outputs, targets, inputs)
+                else:
+                    if rollout_mode:
+                        loss, loss_dict, outputs = self._compute_rollout_loss(inputs, targets, masks)
+                    else:
+                        outputs = self.model(inputs)
+                        loss, loss_dict = self.criterion(outputs, targets, inputs)
 
                 num_batches += 1
 
-                # Accumulate individual loss components
                 for key, value in loss_dict.items():
                     if key not in loss_accumulators:
                         loss_accumulators[key] = 0.0
                     loss_accumulators[key] += value
 
-                density_pred = outputs[:, 0, :, :]
-                velx_pred = outputs[:, 1, :, :]
-                vely_pred = outputs[:, 2, :, :]
+                if outputs is not None:
+                    density_pred = outputs[:, 0, :, :]
+                    velx_pred = outputs[:, 1, :, :]
+                    vely_pred = outputs[:, 2, :, :]
 
-                emitter_mask = inputs[:, 4, :, :]
-                collider_mask = inputs[:, 5, :, :]
+                    if rollout_mode:
+                        target_for_metrics = targets[:, -1, :, :, :]
+                        emitter_mask = masks[:, -1, 0, :, :]
+                        collider_mask = masks[:, -1, 1, :, :]
+                    else:
+                        target_for_metrics = targets
+                        emitter_mask = inputs[:, 4, :, :]
+                        collider_mask = inputs[:, 5, :, :]
 
-                batch_metrics = {}
+                    batch_metrics = {}
 
-                batch_metrics.update(compute_per_channel_mse(outputs, targets))
+                    batch_metrics.update(compute_per_channel_mse(outputs, target_for_metrics))
 
-                batch_metrics["divergence_norm"] = compute_divergence_norm(
-                    velx_pred,
-                    vely_pred,
-                    dx=self.config.physics_loss.grid_spacing,
-                    dy=self.config.physics_loss.grid_spacing,
-                )
+                    batch_metrics["divergence_norm"] = compute_divergence_norm(
+                        velx_pred,
+                        vely_pred,
+                        dx=self.config.physics_loss.grid_spacing,
+                        dy=self.config.physics_loss.grid_spacing,
+                        padding_mode=self.config.padding_mode,
+                    )
 
-                batch_metrics["kinetic_energy"] = compute_kinetic_energy(velx_pred, vely_pred)
+                    batch_metrics["kinetic_energy"] = compute_kinetic_energy(velx_pred, vely_pred)
 
-                batch_metrics["collider_violation"] = compute_collider_violation(density_pred, collider_mask)
+                    batch_metrics["collider_violation"] = compute_collider_violation(density_pred, collider_mask)
 
-                batch_metrics["emitter_density_accuracy"] = compute_emitter_density_accuracy(
-                    density_pred, emitter_mask, expected_injection=0.8
-                )
+                    batch_metrics["emitter_density_accuracy"] = compute_emitter_density_accuracy(
+                        density_pred, emitter_mask, expected_injection=0.8
+                    )
 
-                metrics_tracker.update(batch_metrics)
+                    metrics_tracker.update(batch_metrics)
 
                 pbar.set_postfix({"loss": f"{loss.item():.6f}"})
 
-        # Average all losses
         avg_losses = {key: value / num_batches for key, value in loss_accumulators.items()}
-
-        # Average all metrics
         avg_metrics = metrics_tracker.compute_averages()
 
-        # Merge and return
         return {**avg_losses, **avg_metrics}
+
+    def _compute_rollout_loss(
+        self,
+        x_0: torch.Tensor,
+        y_seq: torch.Tensor,
+        masks: torch.Tensor,
+    ) -> tuple[torch.Tensor, dict[str, float], torch.Tensor]:
+        """
+        Compute loss for K-step autoregressive rollout.
+        Returns: (loss, loss_dict, final_output)
+        """
+        K = y_seq.shape[1]
+
+        state_current = x_0[:, :3, :, :]  # [d_t, vx_t, vz_t]
+        state_prev = x_0[:, 3:4, :, :]  # [d_t-1]
+
+        if self.config.rollout_final_step_only:
+            for k in range(K):
+                emitter_k = masks[:, k, 0:1, :, :]
+                collider_k = masks[:, k, 1:2, :, :]
+                model_input = torch.cat([state_current, state_prev, emitter_k, collider_k], dim=1)
+
+                pred = self.model(model_input)  # (B, 3, H, W)
+
+                if k == K - 1:
+                    target_final = y_seq[:, k, :, :, :]
+                    final_loss, loss_dict = self.criterion(pred, target_final, model_input)
+                    return final_loss, loss_dict, pred
+
+                if self.config.rollout_gradient_truncation:
+                    state_prev = pred[:, 0:1, :, :].detach()
+                    state_current = pred.detach()
+                else:
+                    state_prev = pred[:, 0:1, :, :]
+                    state_current = pred
+
+            raise RuntimeError("Should have returned on final step")
+
+        else:
+            # WEIGHTED-AVERAGE MODE
+            total_loss = torch.tensor(0.0, device=x_0.device)
+            loss_accumulator: dict[str, float] = {}
+            weight_sum = 0.0
+            final_pred: torch.Tensor
+
+            for k in range(K):
+                emitter_k = masks[:, k, 0:1, :, :]
+                collider_k = masks[:, k, 1:2, :, :]
+                model_input = torch.cat([state_current, state_prev, emitter_k, collider_k], dim=1)
+
+                pred = self.model(model_input)  # (B, 3, H, W)
+
+                target_k = y_seq[:, k, :, :, :]
+                loss_k, loss_dict_k = self.criterion(pred, target_k, model_input)
+
+                weight = self.config.rollout_weight_decay**k
+                total_loss += weight * loss_k
+                weight_sum += weight
+
+                for key, val in loss_dict_k.items():
+                    if key not in loss_accumulator:
+                        loss_accumulator[key] = 0.0
+                    loss_accumulator[key] += weight * val
+
+                if self.config.rollout_gradient_truncation:
+                    state_prev = pred[:, 0:1, :, :].detach()
+                    state_current = pred.detach()
+                else:
+                    state_prev = pred[:, 0:1, :, :]
+                    state_current = pred
+
+                final_pred = pred
+
+            total_loss = total_loss / weight_sum
+            averaged_dict = {k: v / weight_sum for k, v in loss_accumulator.items()}
+            return total_loss, averaged_dict, final_pred
+
+    def _create_dataloader_with_rollout_steps(self, K: int, is_training: bool) -> DataLoader:
+        if is_training:
+            if self.train_indices is None:
+                raise RuntimeError("Cannot recreate dataloader: train_indices not provided to Trainer")
+            indices = self.train_indices
+        else:
+            if self.val_indices is None:
+                raise RuntimeError("Cannot recreate dataloader: val_indices not provided to Trainer")
+            indices = self.val_indices
+
+        npz_dir = (
+            PROJECT_ROOT_PATH
+            / project_config.vdb_tools.npz_output_directory
+            / str(project_config.simulation.grid_resolution)
+        )
+
+        dataset = FluidNPZSequenceDataset(
+            npz_dir=npz_dir,
+            normalize=self.config.normalize,
+            seq_indices=indices,
+            is_training=is_training,
+            augmentation_config=self.config.augmentation.model_dump() if is_training else None,
+            preload=self.config.preload_dataset,
+            rollout_steps=K,
+        )
+
+        return DataLoader(
+            dataset,
+            batch_size=self.config.batch_size,
+            shuffle=is_training,
+            num_workers=self.config.num_workers,
+            pin_memory=True if self.device == "cuda" else False,
+        )
 
     def plot_training_history(self) -> Figure:
         num_epochs = len(self.history["train_total"])
@@ -235,7 +421,7 @@ class Trainer:
             min_val_idx = self.history["val_total"].index(min(self.history["val_total"]))
             best_epoch = min_val_idx + 1
 
-        fig, ax_loss = plt.subplots(1, 1, figsize=(10, 6))
+        fig, ax_loss = plt.subplots(1, 1, figsize=(8, 5))
 
         ax_loss.plot(
             epochs,
@@ -286,6 +472,57 @@ class Trainer:
 
         return fig
 
+    def plot_loss_components(self) -> Figure:
+        num_epochs = len(self.history["train_total"])
+        if num_epochs == 0:
+            raise ValueError("No training history to plot")
+
+        epochs = list(range(1, num_epochs + 1))
+
+        if self.early_stopping is not None and self.early_stopping.best_epoch >= 0:
+            best_epoch = self.early_stopping.best_epoch + 1
+        else:
+            min_val_idx = self.history["val_total"].index(min(self.history["val_total"]))
+            best_epoch = min_val_idx + 1
+
+        components = []
+        if "train_mse" in self.history and len(self.history["train_mse"]) > 0:
+            components.append(("MSE", "train_mse", "val_mse"))
+        if "train_divergence" in self.history and len(self.history["train_divergence"]) > 0:
+            components.append(("Divergence", "train_divergence", "val_divergence"))
+        if "train_gradient" in self.history and len(self.history["train_gradient"]) > 0:
+            components.append(("Gradient", "train_gradient", "val_gradient"))
+        if "train_emitter" in self.history and len(self.history["train_emitter"]) > 0:
+            components.append(("Emitter", "train_emitter", "val_emitter"))
+
+        n_components = len(components)
+        fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+        axes = axes.flatten()
+
+        for idx, (name, train_key, val_key) in enumerate(components):
+            ax = axes[idx]
+            ax.plot(epochs, self.history[train_key], color="#0066CC", linewidth=2.0, label="Train", alpha=0.9)
+            ax.plot(epochs, self.history[val_key], color="#FF5500", linewidth=2.0, label="Val", alpha=0.9)
+            ax.axvline(x=best_epoch, color="red", linestyle="--", linewidth=1.5, alpha=0.7)
+
+            ax.set_xlabel("Epoch", fontsize=10)
+            ax.set_ylabel(f"{name} Loss", fontsize=10)
+            ax.set_title(f"{name} Loss", fontsize=12, fontweight="bold")
+            ax.grid(True, alpha=0.3)
+            ax.legend(loc="best", fontsize=9)
+
+            loss_range = max(self.history[train_key]) / (min(self.history[train_key]) + 1e-8)
+            if loss_range > 100:
+                ax.set_yscale("log")
+
+        for idx in range(n_components, 4):
+            axes[idx].axis("off")
+
+        plt.suptitle("Loss Components Over Epochs", fontsize=14, fontweight="bold")
+        plt.tight_layout()
+
+        return fig
+
     def plot_metrics_grid(self) -> Figure:
         """Create comprehensive metrics grid plot."""
         num_epochs = len(self.history["val_total"])
@@ -294,7 +531,7 @@ class Trainer:
 
         epochs = list(range(1, num_epochs + 1))
 
-        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+        fig, axes = plt.subplots(2, 3, figsize=(12, 8))
         axes = axes.flatten()
 
         axes[0].plot(epochs, self.history["val_mse_density"], label="Density", linewidth=2)
@@ -354,6 +591,11 @@ class Trainer:
 
     def train(self) -> None:
         print(f"Starting training for {self.config.epochs} epochs...")
+        print(f"Rollout step: K={self.config.rollout_step}")
+        if self.config.validation_use_rollout_k:
+            print(f"Validation will match training K={self.config.rollout_step}")
+        else:
+            print("Validation will always use K=1 for consistent metrics")
 
         for epoch in range(self.config.epochs):
             epoch_start = time.time()
@@ -371,9 +613,9 @@ class Trainer:
             mlflow.log_metric("learning_rate", current_lr, step=epoch)
 
             self.history["train_total"].append(train_losses["total"])
-            self.history["train_mse"].append(train_losses["mse"])
+            self.history["train_mse"].append(train_losses.get("mse", 0.0))
             self.history["val_total"].append(val_losses["total"])
-            self.history["val_mse"].append(val_losses["mse"])
+            self.history["val_mse"].append(val_losses.get("mse", 0.0))
             self.history["learning_rate"].append(current_lr)
 
             self.history["val_mse_density"].append(val_losses.get("mse_density", 0.0))
@@ -385,12 +627,12 @@ class Trainer:
             self.history["val_emitter_accuracy"].append(val_losses.get("emitter_density_accuracy", 0.0))
 
             if self.config.physics_loss.enable_divergence:
-                self.history["train_divergence"].append(train_losses["divergence"])
-                self.history["val_divergence"].append(val_losses["divergence"])
+                self.history["train_divergence"].append(train_losses.get("divergence", 0.0))
+                self.history["val_divergence"].append(val_losses.get("divergence", 0.0))
 
             if self.config.physics_loss.enable_gradient:
-                self.history["train_gradient"].append(train_losses["gradient"])
-                self.history["val_gradient"].append(val_losses["gradient"])
+                self.history["train_gradient"].append(train_losses.get("gradient", 0.0))
+                self.history["val_gradient"].append(val_losses.get("gradient", 0.0))
 
             print(
                 f"Epoch {epoch + 1}/{self.config.epochs} | "
@@ -402,7 +644,8 @@ class Trainer:
             print(
                 f"  Train: MSE={train_losses.get('mse', 0):.6f}, "
                 f"Div={train_losses.get('divergence', 0):.6f}, "
-                f"Grad={train_losses.get('gradient', 0):.6f}"
+                f"Grad={train_losses.get('gradient', 0):.6f}, "
+                f"Emitter={train_losses.get('emitter', 0):.6f}"
             )
 
             if self.scheduler is not None:
@@ -468,6 +711,25 @@ class Trainer:
         except Exception as e:
             print(f"Warning: Failed to generate/save metrics grid plot - {e}")
 
+        try:
+            fig_loss_components = self.plot_loss_components()
+
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False, mode="wb") as tmp_file:
+                tmp_path = tmp_file.name
+                fig_loss_components.savefig(tmp_path, dpi=150, bbox_inches="tight")
+
+            mlflow.log_artifact(tmp_path, artifact_path="plots/loss_components.png")
+
+            Path(tmp_path).unlink()
+            plt.close(fig_loss_components)
+
+            print("Loss components plot saved to MLflow artifacts")
+
+        except ValueError as e:
+            print(f"Warning: Could not generate loss components plot - {e}")
+        except Exception as e:
+            print(f"Warning: Failed to generate/save loss components plot - {e}")
+
         print("Training complete!")
 
     def save_checkpoint(self, epoch: int, final: bool = False) -> None:
@@ -478,6 +740,13 @@ class Trainer:
             "config": self.config.model_dump(),
         }
 
+        if self.config.variant is not None:
+            checkpoint["variant_metadata"] = self.config.variant.model_dump()
+
+        active_run = mlflow.active_run()
+        if active_run:
+            checkpoint["mlflow_run_id"] = active_run.info.run_id
+
         if self.scaler is not None:
             checkpoint["scaler_state_dict"] = self.scaler.state_dict()
 
@@ -487,7 +756,6 @@ class Trainer:
         if self.early_stopping is not None:
             checkpoint["early_stopping_state"] = self.early_stopping.state_dict()
 
-        # Save checkpoint file
         if final:
             checkpoint_path = self.config.checkpoint_dir / "final_model.pth"
         else:
@@ -498,7 +766,6 @@ class Trainer:
 
         mlflow.log_artifact(str(checkpoint_path))
 
-        # Clean up old checkpoints
         if not final:
             self._cleanup_old_checkpoints()
 
@@ -508,7 +775,6 @@ class Trainer:
             key=lambda x: x.stat().st_mtime,
         )
 
-        # Remove oldest checkpoints if we exceed the limit
         while len(checkpoints) > self.config.keep_last_n_checkpoints:
             oldest = checkpoints.pop(0)
             oldest.unlink()

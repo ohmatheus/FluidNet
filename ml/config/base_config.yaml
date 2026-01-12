@@ -1,0 +1,74 @@
+# === FIXED PARAMS ===
+batch_size: 4
+device: cuda
+amp_enabled: true
+num_workers: 4
+
+# Dataset
+normalize: true
+split_ratios: [0.80, 0.20, 0.0]
+split_seed: 42
+preload_dataset: true
+
+# Augmentation
+augmentation:
+  enable_augmentation: true
+  flip_probability: 0.5
+  flip_axis: x
+
+# Gradient clipping
+gradient_clip_norm: 1.0
+gradient_clip_enabled: true
+
+# MLflow
+mlflow_tracking_uri: ./mlruns
+mlflow_experiment_name: fluid_hierarchical_v1
+
+# === OVERRIDABLE PARAMS ===
+
+# Training duration
+epochs: 200
+
+# Checkpoints
+save_every_n_epochs: 5
+keep_last_n_checkpoints: 20
+
+# Learning rate
+learning_rate: 0.0007
+
+# Physics loss
+physics_loss:
+  mse_weight: 1.0
+  divergence_weight: 0.001
+  gradient_weight: 0.002
+  emitter_weight: 0.05
+  enable_divergence: true
+  enable_gradient: true
+  enable_emitter: true
+
+# Rollout config
+# NOTE: rollout_step is FIXED per variant (K1_A=1, K2_A=2, K3_A=3, etc.)
+# No rollout_schedule needed - each K variant trains at fixed K
+rollout_step: 0
+rollout_weight_decay: 1.10
+rollout_gradient_truncation: false
+validation_use_rollout_k: true
+rollout_final_step_only: false
+
+# LR scheduler
+use_lr_scheduler: true
+lr_scheduler_type: plateau
+lr_scheduler_patience: 4
+lr_scheduler_factor: 0.5
+lr_scheduler_min_lr: 1.0e-6
+lr_scheduler_step_size: 30
+lr_scheduler_t_max: 100
+
+# Early stopping
+use_early_stopping: true
+early_stop_patience: 10
+early_stop_min_delta: 0.0
+
+# Auto-inference (call simple-infer for quick autoregressive simulation)
+auto_inference_enabled: true
+auto_inference_num_frames: 600

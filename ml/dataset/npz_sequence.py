@@ -1,17 +1,14 @@
+import time
 from pathlib import Path
 
 import numpy as np
+import psutil  # type: ignore
 import torch
 from torch.utils.data import Dataset
 
 from config.config import PROJECT_ROOT_PATH, project_config
+from dataset.augmentations import apply_augmentation
 from dataset.normalization import load_normalization_scales
-
-
-def _calculate_fake_count(num_real_sequences: int, fake_empty_pct: int) -> int:
-    if fake_empty_pct == 0:
-        return 0
-    return max(1, int(num_real_sequences * fake_empty_pct / 100))
 
 
 def _validate_sequence_data(
@@ -55,7 +52,9 @@ def _load_sequence_metadata(path: Path) -> tuple[int, int, int]:
         return T, H, W
 
 
-def _build_real_sequence_indices(seq_paths: list[Path]) -> tuple[list[tuple[int, int]], list[int], int, int]:
+def _build_real_sequence_indices(
+    seq_paths: list[Path], rollout_steps: int = 1
+) -> tuple[list[tuple[int, int]], list[int], int, int]:
     indices: list[tuple[int, int]] = []
     frame_counts: list[int] = []
     h, w = 0, 0
@@ -69,8 +68,8 @@ def _build_real_sequence_indices(seq_paths: list[Path]) -> tuple[list[tuple[int,
 
         frame_counts.append(T)
 
-        # Add valid frame indices [1, T-2]
-        for t in range(1, T - 1):
+        # ! Ensure t+rollout_steps is valid
+        for t in range(1, T - rollout_steps):
             indices.append((si, t))
 
     return indices, frame_counts, h, w
@@ -113,50 +112,9 @@ def _apply_normalization(
     return d_t, d_tminus, d_tp1, vx_t, vx_tp1, vz_t, vz_tp1
 
 
-def _create_fake_sample(
-    t: int, fake_shape: tuple[int, int, int], normalize: bool, norm_scales: dict[str, float] | None
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Create a fake (zero-filled) sample."""
-    T, H, W = fake_shape
-
-    # Create zero arrays
-    d = np.zeros((T, H, W), dtype=np.float32)
-    vx = np.zeros((T, H, W), dtype=np.float32)
-    vz = np.zeros((T, H, W), dtype=np.float32)
-    emitter = np.zeros((T, H, W), dtype=np.float32)
-
-    # ---------------------------
-    # Randomly choose between zeros and ones to avoid collider/density bias (per-sequence randomization)
-    collider_value = np.random.choice([0.0, 1.0])
-    collider = np.full((T, H, W), collider_value, dtype=np.float32)
-
-    # collider = np.ones((T, H, W), dtype=np.float32)
-    # ---------------------------
-
-    # Extract time slices
-    d_tminus = d[t - 1]
-    d_t = d[t]
-    d_tp1 = d[t + 1]
-
-    vx_t = vx[t]
-    vx_tp1 = vx[t + 1]
-
-    vz_t = vz[t]
-    vz_tp1 = vz[t + 1]
-
-    emitter_t = emitter[t]
-    collider_t = collider[t]
-
-    x = np.stack([d_t, vx_t, vz_t, d_tminus, emitter_t, collider_t], axis=0)  # (6,H,W)
-    y = np.stack([d_tp1, vx_tp1, vz_tp1], axis=0)  # (3,H,W)
-
-    return torch.from_numpy(x), torch.from_numpy(y)
-
-
 def _load_sample(
     path: Path, t: int, normalize: bool, norm_scales: dict[str, float] | None
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Load a real sample from NPZ file."""
     with np.load(path) as data:
         d = data["density"].astype(np.float32, copy=False)
         vx = data["velx"].astype(np.float32, copy=False)
@@ -198,6 +156,62 @@ def _load_sample(
     return torch.from_numpy(x), torch.from_numpy(y)
 
 
+def _load_rollout_sample(
+    path: Path,
+    t_start: int,
+    rollout_steps: int,
+    normalize: bool,
+    norm_scales: dict[str, float] | None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    with np.load(path) as data:
+        d = data["density"].astype(np.float32, copy=False)
+        vx = data["velx"].astype(np.float32, copy=False)
+        vz = data["velz"].astype(np.float32, copy=False)
+        emitter = data.get("emitter", np.zeros_like(d)).astype(np.float32, copy=False)
+        collider = data.get("collider", np.zeros_like(d)).astype(np.float32, copy=False)
+
+        t = t_start
+
+        # Initial state (frame t and t-1)
+        d_t = d[t]
+        d_tminus = d[t - 1]
+        vx_t = vx[t]
+        vz_t = vz[t]
+        emitter_t = emitter[t]
+        collider_t = collider[t]
+
+        # Build target sequence (frames t+1 to t+K)
+        y_list = []
+        mask_list = [np.stack([emitter_t, collider_t], axis=0)]  # Start with initial masks at time t
+
+        for k in range(1, rollout_steps + 1):
+            d_future = d[t + k]
+            vx_future = vx[t + k]
+            vz_future = vz[t + k]
+            emitter_future = emitter[t + k]
+            collider_future = collider[t + k]
+
+            if normalize and norm_scales is not None:
+                d_future = d_future / norm_scales["S_density"]
+                vx_future = vx_future / norm_scales["S_velx"]
+                vz_future = vz_future / norm_scales["S_velz"]
+
+            y_list.append(np.stack([d_future, vx_future, vz_future], axis=0))
+            mask_list.append(np.stack([emitter_future, collider_future], axis=0))
+
+        if normalize and norm_scales is not None:
+            d_t = d_t / norm_scales["S_density"]
+            d_tminus = d_tminus / norm_scales["S_density"]
+            vx_t = vx_t / norm_scales["S_velx"]
+            vz_t = vz_t / norm_scales["S_velz"]
+
+        x_0 = np.stack([d_t, vx_t, vz_t, d_tminus, emitter_t, collider_t], axis=0)
+        y_seq = np.stack(y_list, axis=0)  # (K, 3, H, W)
+        masks = np.stack(mask_list, axis=0)  # (K+1, 2, H, W) - includes initial mask at t
+
+    return torch.from_numpy(x_0), torch.from_numpy(y_seq), torch.from_numpy(masks)
+
+
 class FluidNPZSequenceDataset(Dataset):
     """
     PyTorch Dataset for fluid sequences saved as seq_*.npz with arrays:
@@ -213,11 +227,19 @@ class FluidNPZSequenceDataset(Dataset):
         npz_dir: str | Path,
         normalize: bool = False,
         seq_indices: list[int] | None = None,
-        fake_empty_pct: int = 0,
+        is_training: bool = False,
+        augmentation_config: dict | None = None,
+        preload: bool = False,
+        rollout_steps: int = 1,
     ) -> None:
         self.npz_dir = npz_dir
         self.normalize = normalize
-        self.fake_empty_pct = fake_empty_pct
+        self.rollout_steps = rollout_steps
+
+        self.is_training = is_training
+        self.augmentation_config = augmentation_config or {}
+        self.enable_augmentation = self.augmentation_config.get("enable_augmentation", False)
+        self.flip_probability = self.augmentation_config.get("flip_probability", 0.5)
 
         npz_dir_path = Path(npz_dir)
         all_seq_paths: list[Path] = sorted(
@@ -233,7 +255,7 @@ class FluidNPZSequenceDataset(Dataset):
             self.seq_paths = all_seq_paths
 
         self.num_real_sequences = len(self.seq_paths)
-        self.num_fake_sequences = _calculate_fake_count(self.num_real_sequences, fake_empty_pct)
+        # self.num_fake_sequences = _calculate_fake_count(self.num_real_sequences, fake_empty_pct)
 
         # Load global normalization scales
         self._norm_scales: dict[str, float] | None = None
@@ -241,34 +263,198 @@ class FluidNPZSequenceDataset(Dataset):
             stats_path = PROJECT_ROOT_PATH / project_config.vdb_tools.stats_output_file
             self._norm_scales = load_normalization_scales(stats_path)
 
-        self._index, frame_counts, h, w = _build_real_sequence_indices(self.seq_paths)
+        self._index, frame_counts, h, w = _build_real_sequence_indices(self.seq_paths, rollout_steps=rollout_steps)
 
         if not self._index:
             raise RuntimeError("No valid samples found (need T>=3 per sequence)")
 
-        # Add fake sequence indices
-        self._fake_shape: tuple[int, int, int] | None
-        if self.num_fake_sequences > 0 and frame_counts:
-            fake_t = int(np.mean(frame_counts))
-            self._fake_shape = (fake_t, h, w)
+        self.preload = preload
+        self._preloaded_sequences: dict[int, dict[str, np.ndarray]] | None = None
 
-            fake_indices = _build_fake_sequence_indices(
-                self.num_fake_sequences, self.num_real_sequences, self._fake_shape
+        if self.preload:
+            self._preload_sequences()
+
+    def _estimate_memory_usage(self, seq_paths: list[Path]) -> tuple[int, str]:
+        total_bytes = 0
+
+        for path in seq_paths:
+            with np.load(path) as data:
+                for key in ["density", "velx", "velz", "emitter", "collider"]:
+                    if key in data:
+                        arr = data[key]
+                        total_bytes += arr.size * arr.itemsize
+
+        size = float(total_bytes)
+        for unit in ["B", "KB", "MB", "GB"]:
+            if size < 1024.0:
+                return total_bytes, f"{size:.2f} {unit}"
+            size /= 1024.0
+
+        return total_bytes, f"{size:.2f} TB"
+
+    def _preload_sequences(self) -> None:
+        print(f"Preloading {self.num_real_sequences} sequences into memory...")
+
+        mem_bytes, mem_str = self._estimate_memory_usage(self.seq_paths)
+        print(f"Estimated memory usage: {mem_str}")
+
+        try:
+            available_gb = psutil.virtual_memory().available / (1024**3)
+            required_gb = mem_bytes / (1024**3)
+            if required_gb > available_gb * 0.8:
+                print(f"WARNING: Required memory ({required_gb:.2f} GB) is close to available ({available_gb:.2f} GB)")
+        except ImportError:
+            pass
+
+        self._preloaded_sequences = {}
+        start_time = time.time()
+
+        try:
+            for si, path in enumerate(self.seq_paths):
+                with np.load(path) as data:
+                    seq_data = {
+                        "density": data["density"].astype(np.float32, copy=True),
+                        "velx": data["velx"].astype(np.float32, copy=True),
+                        "velz": data["velz"].astype(np.float32, copy=True),
+                        "emitter": data["emitter"].astype(np.float32, copy=True) if "emitter" in data else None,
+                        "collider": data["collider"].astype(np.float32, copy=True) if "collider" in data else None,
+                    }
+
+                    self._preloaded_sequences[si] = seq_data
+
+        except MemoryError as e:
+            print("ERROR: Out of memory during preloading. Falling back to on-disk loading.")
+            print("Consider: 1) Setting preload=False, 2) Reducing batch_size, 3) Adding more RAM")
+            self._preloaded_sequences = None
+            self.preload = False
+            raise RuntimeError("Dataset preloading failed due to insufficient memory") from e
+        except Exception as e:
+            print(f"ERROR: Unexpected error during preloading: {e}")
+            self._preloaded_sequences = None
+            self.preload = False
+            raise
+
+        elapsed = time.time() - start_time
+        print(f"Preloaded {self.num_real_sequences} sequences in {elapsed:.2f}s")
+
+    def _load_sample_from_memory(self, si: int, t: int) -> tuple[torch.Tensor, torch.Tensor]:
+        assert self._preloaded_sequences is not None, "Preloaded sequences should be available"
+        seq_data = self._preloaded_sequences[si]
+
+        d = seq_data["density"]
+        vx = seq_data["velx"]
+        vz = seq_data["velz"]
+        emitter = seq_data["emitter"] if seq_data["emitter"] is not None else np.zeros_like(d)
+        collider = seq_data["collider"] if seq_data["collider"] is not None else np.zeros_like(d)
+
+        d_tminus = d[t - 1]
+        d_t = d[t]
+        d_tp1 = d[t + 1]
+
+        vx_t = vx[t]
+        vx_tp1 = vx[t + 1]
+
+        vz_t = vz[t]
+        vz_tp1 = vz[t + 1]
+
+        emitter_t = emitter[t]
+        collider_t = collider[t]
+
+        if self.normalize and self._norm_scales is not None:
+            d_t, d_tminus, d_tp1, vx_t, vx_tp1, vz_t, vz_tp1 = _apply_normalization(
+                d_t, d_tminus, d_tp1, vx_t, vx_tp1, vz_t, vz_tp1, self._norm_scales
             )
-            self._index.extend(fake_indices)
-        else:
-            self._fake_shape = None
+
+        x = np.stack([d_t, vx_t, vz_t, d_tminus, emitter_t, collider_t], axis=0)
+        y = np.stack([d_tp1, vx_tp1, vz_tp1], axis=0)
+
+        return torch.from_numpy(x), torch.from_numpy(y)
+
+    def _load_rollout_sample_from_memory(
+        self, si: int, t_start: int
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        assert self._preloaded_sequences is not None
+        seq_data = self._preloaded_sequences[si]
+
+        d = seq_data["density"]
+        vx = seq_data["velx"]
+        vz = seq_data["velz"]
+        emitter = seq_data["emitter"] if seq_data["emitter"] is not None else np.zeros_like(d)
+        collider = seq_data["collider"] if seq_data["collider"] is not None else np.zeros_like(d)
+
+        t = t_start
+
+        # Initial state
+        d_t = d[t]
+        d_tminus = d[t - 1]
+        vx_t = vx[t]
+        vz_t = vz[t]
+        emitter_t = emitter[t]
+        collider_t = collider[t]
+
+        # Build target sequence
+        y_list = []
+        mask_list = []
+
+        for k in range(1, self.rollout_steps + 1):
+            d_future = d[t + k]
+            vx_future = vx[t + k]
+            vz_future = vz[t + k]
+            emitter_future = emitter[t + k]
+            collider_future = collider[t + k]
+
+            if self.normalize and self._norm_scales is not None:
+                d_future = d_future / self._norm_scales["S_density"]
+                vx_future = vx_future / self._norm_scales["S_velx"]
+                vz_future = vz_future / self._norm_scales["S_velz"]
+
+            y_list.append(np.stack([d_future, vx_future, vz_future], axis=0))
+            mask_list.append(np.stack([emitter_future, collider_future], axis=0))
+
+        if self.normalize and self._norm_scales is not None:
+            d_t = d_t / self._norm_scales["S_density"]
+            d_tminus = d_tminus / self._norm_scales["S_density"]
+            vx_t = vx_t / self._norm_scales["S_velx"]
+            vz_t = vz_t / self._norm_scales["S_velz"]
+
+        x_0 = np.stack([d_t, vx_t, vz_t, d_tminus, emitter_t, collider_t], axis=0)
+        y_seq = np.stack(y_list, axis=0)
+        masks = np.stack(mask_list, axis=0)
+
+        return torch.from_numpy(x_0), torch.from_numpy(y_seq), torch.from_numpy(masks)
 
     def __len__(self) -> int:
         return len(self._index)
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(
+        self, idx: int
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor]:
         si, t = self._index[idx]
 
-        # if fake sequence
-        if si >= self.num_real_sequences:
-            assert self._fake_shape is not None, "Fake shape should be set when fake sequences are enabled"
-            return _create_fake_sample(t, self._fake_shape, self.normalize, self._norm_scales)
-
+        # Handle real sequences
         path = self.seq_paths[si]
-        return _load_sample(path, t, self.normalize, self._norm_scales)
+
+        if self.rollout_steps > 1:
+            # Multi-step rollout mode
+            if self.preload and self._preloaded_sequences is not None:
+                x, y_seq, masks = self._load_rollout_sample_from_memory(si, t)
+            else:
+                x, y_seq, masks = _load_rollout_sample(path, t, self.rollout_steps, self.normalize, self._norm_scales)
+
+            if self.is_training and self.enable_augmentation:
+                from dataset.augmentations import apply_rollout_augmentation
+
+                x, y_seq, masks = apply_rollout_augmentation(x, y_seq, masks, self.flip_probability)
+
+            return x, y_seq, masks
+        else:
+            # Single-step mode (existing code)
+            if self.preload and self._preloaded_sequences is not None:
+                x, y = self._load_sample_from_memory(si, t)
+            else:
+                x, y = _load_sample(path, t, self.normalize, self._norm_scales)
+
+            if self.is_training and self.enable_augmentation:
+                x, y = apply_augmentation(x, y, self.flip_probability)
+
+            return x, y
