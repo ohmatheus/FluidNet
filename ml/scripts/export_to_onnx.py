@@ -5,6 +5,8 @@ from datetime import datetime
 
 import torch
 import torch.nn as nn
+import onnx
+from onnxruntime.quantization import quantize_dynamic, QuantType
 
 from config.config import PROJECT_ROOT_PATH, project_config
 from models.unet import UNet, UNetConfig
@@ -15,12 +17,18 @@ INPUT_CHANNELS = project_config.simulation.input_channels
 BATCH_SIZE = 1
 ONNX_OPSET_VERSION = 18
 
+EXPORT_FP16 = True   # GPU
+EXPORT_INT8 = True   # CPU
+FP16_SUFFIX = "_fp16"
+INT8_SUFFIX = "_int8"
+
 
 def get_export_metadata_path(onnx_path: Path) -> Path:
     return onnx_path.with_suffix('.onnx.meta')
 
 
 def needs_export(checkpoint_path: Path, onnx_path: Path, force: bool) -> bool:
+    """Check if export is needed - either checkpoint is newer or variants are missing."""
     if force:
         return True
 
@@ -35,27 +43,47 @@ def needs_export(checkpoint_path: Path, onnx_path: Path, force: bool) -> bool:
         with open(metadata_path, 'r') as f:
             metadata = json.load(f)
 
+        # If checkpoint is newer than last export, re-export everything
         checkpoint_mtime = checkpoint_path.stat().st_mtime
-        stored_mtime = metadata.get('checkpoint_mtime', 0)
-
-        if checkpoint_mtime > stored_mtime:
+        if checkpoint_mtime > metadata.get('checkpoint_mtime', 0):
             return True
 
-        return False
+        variants = metadata.get('variants', {})
+
+        if EXPORT_FP16:
+            fp16_path = onnx_path.with_stem(onnx_path.stem + FP16_SUFFIX)
+            if 'fp16' not in variants or not fp16_path.exists():
+                return True  # Need to export FP16 variant
+
+        if EXPORT_INT8:
+            int8_path = onnx_path.with_stem(onnx_path.stem + INT8_SUFFIX)
+            if 'int8' not in variants or not int8_path.exists():
+                return True  # Need to export INT8 variant
+
+        return False  # All variants exist and are up-to-date
+
     except (json.JSONDecodeError, KeyError, OSError):
-        return True
+        return True  # Error reading metadata, need to re-export
 
 
-def save_export_metadata(checkpoint_path: Path, onnx_path: Path) -> None:
+def save_export_metadata(checkpoint_path: Path, base_onnx_path: Path,
+                        variants_info: dict[str, dict]) -> None:
+    """
+    Save metadata for base model and all variants.
+    variants_info = {
+        'fp32': {'path': '...', 'size_mb': ..., 'mtime': ...},
+        'fp16': {'path': '...', 'size_mb': ..., 'mtime': ...},
+        'int8': {'path': '...', 'size_mb': ..., 'mtime': ...},
+    }
+    """
     metadata = {
         'checkpoint_path': str(checkpoint_path.absolute()),
         'checkpoint_mtime': checkpoint_path.stat().st_mtime,
-        'onnx_path': str(onnx_path.absolute()),
-        'onnx_mtime': onnx_path.stat().st_mtime,
-        'export_date': datetime.now().isoformat()
+        'export_date': datetime.now().isoformat(),
+        'variants': variants_info
     }
 
-    metadata_path = get_export_metadata_path(onnx_path)
+    metadata_path = get_export_metadata_path(base_onnx_path)
     with open(metadata_path, 'w') as f:
         json.dump(metadata, f, indent=2)
 
@@ -142,6 +170,34 @@ def export_model_to_onnx(
     print(f"  Exported to {output_path} ({file_size_mb:.1f} MB)")
 
 
+def convert_to_fp16(fp32_path: Path, fp16_path: Path) -> None:
+    from onnxconverter_common import float16
+
+    model = onnx.load(str(fp32_path))
+    model_fp16 = float16.convert_float_to_float16(model, keep_io_types=True)
+    onnx.save(model_fp16, str(fp16_path))
+
+    fp32_size = fp32_path.stat().st_size / (1024 * 1024)
+    fp16_size = fp16_path.stat().st_size / (1024 * 1024)
+    reduction = ((fp32_size - fp16_size) / fp32_size) * 100
+
+    print(f"  Converted to {fp16_path.name} ({fp16_size:.1f} MB, {reduction:.1f}% reduction)")
+
+
+def quantize_model_to_int8(fp32_path: Path, int8_path: Path) -> None:
+    quantize_dynamic(
+        model_input=str(fp32_path),
+        model_output=str(int8_path),
+        weight_type=QuantType.QInt8
+    )
+
+    fp32_size = fp32_path.stat().st_size / (1024 * 1024)
+    int8_size = int8_path.stat().st_size / (1024 * 1024)
+    reduction = ((fp32_size - int8_size) / fp32_size) * 100
+
+    print(f"  Quantized to {int8_path.name} ({int8_size:.1f} MB, {reduction:.1f}% reduction)")
+
+
 def create_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Export PyTorch checkpoints to ONNX format",
@@ -194,22 +250,71 @@ def discover_checkpoints_to_export(checkpoints_dir: Path, onnx_export_dir: Path)
 def export_checkpoint(display_name: str, checkpoint_path: Path, onnx_path: Path, device: str, input_shape: tuple[int, int, int, int]) -> bool:
     print(f"\nExporting: {display_name}")
     print(f"  Checkpoint: {checkpoint_path}")
-    print(f"  ONNX output: {onnx_path}")
+    print(f"  ONNX base: {onnx_path}")
+
+    variants_info = {}
 
     try:
-        model = load_model_from_checkpoint(checkpoint_path, device)
-        export_model_to_onnx(model, onnx_path, input_shape, device)
-        save_export_metadata(checkpoint_path, onnx_path)
+        if not onnx_path.exists():
+            print(f"  Exporting FP32...")
+            model = load_model_from_checkpoint(checkpoint_path, device)
+            export_model_to_onnx(model, onnx_path, input_shape, device)
+        else:
+            print(f"  FP32 exists, skipping")
+
+        if onnx_path.exists():
+            variants_info['fp32'] = {
+                'path': str(onnx_path.absolute()),
+                'size_mb': round(onnx_path.stat().st_size / (1024 * 1024), 2),
+                'mtime': onnx_path.stat().st_mtime
+            }
+
+        fp16_path = onnx_path.with_stem(onnx_path.stem + FP16_SUFFIX)
+        if EXPORT_FP16 and not fp16_path.exists():
+            try:
+                print(f"  Converting to FP16...")
+                convert_to_fp16(onnx_path, fp16_path)
+                variants_info['fp16'] = {
+                    'path': str(fp16_path.absolute()),
+                    'size_mb': round(fp16_path.stat().st_size / (1024 * 1024), 2),
+                    'mtime': fp16_path.stat().st_mtime
+                }
+            except Exception as e:
+                print(f"  Warning: FP16 conversion failed - {e}")
+        elif fp16_path.exists():
+            print(f"  FP16 exists, skipping")
+            variants_info['fp16'] = {
+                'path': str(fp16_path.absolute()),
+                'size_mb': round(fp16_path.stat().st_size / (1024 * 1024), 2),
+                'mtime': fp16_path.stat().st_mtime
+            }
+
+        int8_path = onnx_path.with_stem(onnx_path.stem + INT8_SUFFIX)
+        if EXPORT_INT8 and not int8_path.exists():
+            try:
+                print(f"  Quantizing to INT8...")
+                quantize_model_to_int8(onnx_path, int8_path)
+                variants_info['int8'] = {
+                    'path': str(int8_path.absolute()),
+                    'size_mb': round(int8_path.stat().st_size / (1024 * 1024), 2),
+                    'mtime': int8_path.stat().st_mtime
+                }
+            except Exception as e:
+                print(f"  Warning: INT8 quantization failed - {e}")
+        elif int8_path.exists():
+            print(f"  INT8 exists, skipping")
+            variants_info['int8'] = {
+                'path': str(int8_path.absolute()),
+                'size_mb': round(int8_path.stat().st_size / (1024 * 1024), 2),
+                'mtime': int8_path.stat().st_mtime
+            }
+
+        save_export_metadata(checkpoint_path, onnx_path, variants_info)
+
         return True
 
-    except KeyError as e:
-        print(f"  Error: Missing configuration in checkpoint - {e}")
-        return False
-    except RuntimeError as e:
-        print(f"  Error: ONNX export failed - {e}")
-        return False
     except Exception as e:
-        print(f"  Error: Unexpected error - {type(e).__name__}: {e}")
+        print(f"  Error: {type(e).__name__}: {e}")
         return False
 
 

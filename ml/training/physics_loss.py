@@ -49,9 +49,6 @@ def compute_spatial_gradients(
 
 
 def compute_divergence(velx: torch.Tensor, vely: torch.Tensor, dx: float = 1.0, dy: float = 1.0, padding_mode: str = "zeros") -> torch.Tensor:
-    """
-    Compute velocity divergence: ∇·v = ∂velx/∂x + ∂vely/∂y
-    """
     grad_vx_x, _ = compute_spatial_gradients(velx, dx, dy, padding_mode)
     _, grad_vy_y = compute_spatial_gradients(vely, dx, dy, padding_mode)
 
@@ -73,7 +70,7 @@ def divergence_loss(
     """
     Divergence-free constraint: ∇·v ≈ 0 in fluid regions.
 
-    Excludes emitter regions (where mass is injected) and optionally collider regions.
+    Excludes emitter regions (where mass is injected) and collider regions.
     """
     div = compute_divergence(velx, vely, dx, dy, padding_mode)
 
@@ -101,10 +98,6 @@ def gradient_loss(
     dy: float = 1.0,
     padding_mode: str = "zeros",
 ) -> torch.Tensor:
-    """
-    Gradient/edge preservation loss for density field.
-    Helps preserve sharp smoke edges by matching spatial gradients.
-    """
     grad_pred_x, grad_pred_y = compute_spatial_gradients(density_pred, dx, dy, padding_mode)
     grad_target_x, grad_target_y = compute_spatial_gradients(density_target, dx, dy, padding_mode)
 
@@ -120,22 +113,12 @@ def emitter_spawn_loss(
     emitter_mask: torch.Tensor,
     threshold: float = 0.01,
 ) -> torch.Tensor:
-    """
-    Penalize density spawning in non-emitter regions.
-    """
     allowed_mask = (emitter_mask > 0.01) | (density_current > threshold)
     forbidden_density = density_pred * (~allowed_mask).float()
     return forbidden_density.mean()
 
 
 class PhysicsAwareLoss(nn.Module):
-    """
-    Combines:
-    - MSE reconstruction loss
-    - Divergence-free constraint (∇·v ≈ 0)
-    - Gradient preservation
-    """
-
     def __init__(
         self,
         mse_weight: float = 1.0,

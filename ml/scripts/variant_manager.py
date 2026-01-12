@@ -15,9 +15,6 @@ class VariantManager:
         self._variants_cache = self.discover_variants()
 
     def discover_variants(self) -> Dict[str, Path]:
-        """
-        Recursively glob all .yaml files in variants directory.
-        """
         variants = {}
         for yaml_file in self.variants_dir.rglob("*.yaml"):
             # Load YAML to get variant_name field
@@ -69,7 +66,6 @@ class VariantManager:
         # Load variant chain (from root to leaf)
         variant_chain = self.resolve_dependency_chain(variant_name)
 
-        # Get architecture from first variant
         first_variant_path = self.get_variant_yaml_path(variant_chain[0])
         first_variant_data = self.load_yaml(first_variant_path)
         arch_name = first_variant_data.get("model_architecture")
@@ -77,7 +73,6 @@ class VariantManager:
         if not arch_name:
             raise ValueError(f"Variant {variant_chain[0]} missing 'model_architecture' field")
 
-        # Merge
         arch_path = self.architectures_dir / f"{arch_name}.yaml"
         if not arch_path.exists():
             raise FileNotFoundError(f"Architecture '{arch_name}' not found at {arch_path}")

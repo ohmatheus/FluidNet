@@ -191,8 +191,6 @@ def main() -> None:
     # Create circular mask
     circle_mask = dist <= circle_radius
 
-    # Create binary emitter mask (1 inside circle, 0 outside)
-    # This is a static mask - same for all frames
     emitter_mask = np.zeros((args.resolution, args.resolution), dtype=np.float32)
     emitter_mask[circle_mask] = 1.0
 
@@ -202,7 +200,6 @@ def main() -> None:
     collider_center_x = args.resolution // 2
     collider_center_y = args.resolution // 2 - 40
 
-    # Create rectangular mask (1 inside rectangle, 0 outside)
     collider_mask = np.zeros((args.resolution, args.resolution), dtype=np.float32)
     x_start = max(0, collider_center_x - collider_width // 2)
     x_end = min(args.resolution, collider_center_x + collider_width // 2)
@@ -210,7 +207,7 @@ def main() -> None:
     y_end = min(args.resolution, collider_center_y + collider_height // 2)
     collider_mask[y_start:y_end, x_start:x_end] = 1.0
 
-    # Initialize density=1.0 in emitter region (but not where collider is)
+    # Initialize density=1.0 in emitter region
     #initial_density_mask = (emitter_mask > 0) & (collider_mask == 0)
     #state_prev[0] = initial_density_mask.astype(np.float32)
     #state_current[0] = initial_density_mask.astype(np.float32)
@@ -235,15 +232,14 @@ def main() -> None:
 
         model_input = np.concatenate(
             [
-                state_current,  # [density_t, velx_t, vely_t]
-                state_prev[0:1],  # [density_{t-1}]
-                emitter_channel,  # [emitter_mask]
-                collider_channel,  # [collider_mask]
+                state_current,
+                state_prev[0:1],
+                emitter_channel,
+                collider_channel,
             ],
             axis=0,
-        )  # Shape: (6, H, W)
+        )
 
-        # Log input statistics (first 3 channels: density, velx, vely)
         log_channel_stats(frame_idx, model_input[:3], "INPUT", log_file)
 
         # Add batch dimension
@@ -254,10 +250,8 @@ def main() -> None:
         # Remove batch dimension
         output = output[0]  # Shape: (3, H, W)
 
-        # Log output statistics
         log_channel_stats(frame_idx, output, "OUTPUT", log_file)
 
-        # Extract density for visualization
         density = output[0]  # Shape: (H, W)
         # vel_mag = np.sqrt(output[1]**2 + output[2]**2)
         # vel_mag = (vel_mag - vel_mag.min()) / (vel_mag.max() - vel_mag.min() + 1e-8)

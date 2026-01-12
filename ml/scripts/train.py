@@ -70,19 +70,14 @@ def make_splits(
 
 
 def dict_to_training_config(config_dict: dict) -> TrainingConfig:
-    """Convert merged config dict to TrainingConfig instance."""
-    # Remove metadata fields that aren't part of TrainingConfig
-    variant_metadata = config_dict.pop("_variant_metadata", None)
     config_dict.pop("variant_name", None)
     config_dict.pop("model_architecture", None)
     config_dict.pop("parent_variant", None)
 
-    # Handle augmentation nested dict
     if "augmentation" in config_dict and isinstance(config_dict["augmentation"], dict):
         from config.training_config import AugmentationConfig
         config_dict["augmentation"] = AugmentationConfig(**config_dict["augmentation"])
 
-    # Handle physics_loss nested dict
     if "physics_loss" in config_dict and isinstance(config_dict["physics_loss"], dict):
         from config.training_config import PhysicsLossConfig
         config_dict["physics_loss"] = PhysicsLossConfig(**config_dict["physics_loss"])
@@ -97,22 +92,16 @@ def train_single_variant(
     device: str | None = None,
     parent_run_id: str | None = None,
 ) -> str:
-    """Train a single variant and return MLflow run ID."""
-
     print(f"\n{'='*80}")
     print(f"Training variant: {variant_name}")
     print(f"{'='*80}\n")
 
-    # Build config with cascading inheritance
     config_dict = manager.build_config_with_inheritance(variant_name)
 
-    # Extract variant metadata BEFORE dict_to_training_config (which pops it)
     variant_meta = config_dict["_variant_metadata"]
 
-    # Convert to TrainingConfig (this will pop _variant_metadata)
     config = dict_to_training_config(config_dict)
 
-    # Build VariantMetadata from extracted metadata
     config.variant = VariantMetadata(
         variant_name=variant_name,
         model_architecture_name=variant_meta["model_architecture_name"],
@@ -170,7 +159,6 @@ def train_single_variant(
     train_loader = DataLoader(train_ds, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers)
     val_loader = DataLoader(val_ds, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers)
 
-    # Create model
     model = UNet(
         cfg=UNetConfig(
             in_channels=config.in_channels,
@@ -199,13 +187,11 @@ def train_single_variant(
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Model parameters: {total_params:,}")
 
-    # MLflow setup
     mlflow.set_experiment(config.mlflow_experiment_name)
 
     with mlflow.start_run(run_name=config.variant.full_model_name) as run:
         run_id = run.info.run_id
 
-        # Log variant tags
         mlflow.set_tags({
             "variant_name": variant_name,
             "model_architecture": config.variant.model_architecture_name,
@@ -215,11 +201,9 @@ def train_single_variant(
             "relative_dir": str(config.variant.relative_dir),
         })
 
-        # Link to parent run (for MLflow hierarchy visualization)
         if parent_run_id:
             mlflow.set_tag("mlflow.parentRunId", parent_run_id)
 
-        # Log all hyperparameters
         mlflow.log_params({
             # Model identity
             "model_name": model.__class__.__name__,
@@ -289,7 +273,6 @@ def train_single_variant(
             "keep_last_n_checkpoints": config.keep_last_n_checkpoints,
         })
 
-        # Train
         trainer = Trainer(
             model=model,
             train_loader=train_loader,
@@ -305,7 +288,6 @@ def train_single_variant(
         print(f"\nTraining complete: {config.variant.full_model_name}")
         print(f"Best model: {config.checkpoint_dir_variant / 'best_model.pth'}")
 
-    # Auto-inference
     if run_inference and config_dict.get("auto_inference_enabled", True):
         run_auto_inference(variant_name, manager)
 
@@ -313,7 +295,6 @@ def train_single_variant(
 
 
 def run_auto_inference(variant_name: str, manager: VariantManager):
-    """Run simple_infer.py as subprocess after training."""
     print(f"\n{'='*80}")
     print(f"Running auto-inference for {variant_name}")
     print(f"{'='*80}\n")
@@ -379,7 +360,6 @@ def create_argument_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = create_argument_parser().parse_args()
 
-    # Initialize variant manager
     ml_root = Path(__file__).parent.parent
     manager = VariantManager(
         config_root=ml_root / "config",

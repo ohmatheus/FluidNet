@@ -355,13 +355,11 @@ class Trainer:
                 total_loss += weight * loss_k
                 weight_sum += weight
 
-                # Accumulate weighted loss components
                 for key, val in loss_dict_k.items():
                     if key not in loss_accumulator:
                         loss_accumulator[key] = 0.0
                     loss_accumulator[key] += weight * val
 
-                # Update state for next iteration
                 if self.config.rollout_gradient_truncation:
                     state_prev = pred[:, 0:1, :, :].detach()
                     state_current = pred.detach()
@@ -376,7 +374,6 @@ class Trainer:
             return total_loss, averaged_dict, final_pred
 
     def _create_dataloader_with_rollout_steps(self, K: int, is_training: bool) -> DataLoader:
-        # Check if we have indices
         if is_training:
             if self.train_indices is None:
                 raise RuntimeError("Cannot recreate dataloader: train_indices not provided to Trainer")
@@ -743,11 +740,9 @@ class Trainer:
             "config": self.config.model_dump(),
         }
 
-        # Save variant metadata if available
         if self.config.variant is not None:
             checkpoint["variant_metadata"] = self.config.variant.model_dump()
 
-        # Save MLflow run ID if available
         active_run = mlflow.active_run()
         if active_run:
             checkpoint["mlflow_run_id"] = active_run.info.run_id
@@ -761,7 +756,6 @@ class Trainer:
         if self.early_stopping is not None:
             checkpoint["early_stopping_state"] = self.early_stopping.state_dict()
 
-        # Save checkpoint file
         if final:
             checkpoint_path = self.config.checkpoint_dir / "final_model.pth"
         else:
@@ -772,7 +766,6 @@ class Trainer:
 
         mlflow.log_artifact(str(checkpoint_path))
 
-        # Clean up old checkpoints
         if not final:
             self._cleanup_old_checkpoints()
 
@@ -782,7 +775,6 @@ class Trainer:
             key=lambda x: x.stat().st_mtime,
         )
 
-        # Remove oldest checkpoints if we exceed the limit
         while len(checkpoints) > self.config.keep_last_n_checkpoints:
             oldest = checkpoints.pop(0)
             oldest.unlink()

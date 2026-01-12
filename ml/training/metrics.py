@@ -4,11 +4,6 @@ from training.physics_loss import compute_divergence
 
 
 def compute_per_channel_mse(pred: torch.Tensor, target: torch.Tensor) -> dict[str, float]:
-    """
-    Separate MSE for density, velx, vely channels.
-    Identifies which channel has highest error.
-    Target: All channels similar MSE (balanced model).
-    """
     mse_density = torch.mean((pred[:, 0] - target[:, 0]) ** 2).item()
     mse_velx = torch.mean((pred[:, 1] - target[:, 1]) ** 2).item()
     mse_vely = torch.mean((pred[:, 2] - target[:, 2]) ** 2).item()

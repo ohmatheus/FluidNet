@@ -23,11 +23,7 @@ def apply_rollout_augmentation(
     masks: torch.Tensor,
     flip_prob: float = 0.5,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """
-    Apply augmentation to K-step rollout sequence.
-    """
     if torch.rand(1).item() < flip_prob:
-        # Flip spatial dimension (width)
         x_0 = torch.flip(x_0, dims=[2])  # (6, H, W) -> flip width
         y_seq = torch.flip(y_seq, dims=[3])  # (K, 3, H, W) -> flip width
         masks = torch.flip(masks, dims=[3])  # (K, 2, H, W) -> flip width

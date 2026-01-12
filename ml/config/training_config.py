@@ -32,7 +32,7 @@ class VariantMetadata(BaseModel):
     parent_variant: str | None = None
     warmstart_checkpoint: Path | None = None
     variant_yaml_path: Path
-    relative_dir: Path  # Relative path from variants dir (e.g., "experiments/physics_study")
+    relative_dir: Path
 
 
 class TrainingConfig(BaseModel):
@@ -91,10 +91,8 @@ class TrainingConfig(BaseModel):
     early_stop_patience: int = 10
     early_stop_min_delta: float = 0
     
-    # Physics-aware loss configuration
     physics_loss: PhysicsLossConfig = PhysicsLossConfig()
 
-    # Variant metadata (for hierarchical multi-variant training)
     variant: VariantMetadata | None = None
 
     # Multi-step rollout training
@@ -122,21 +120,18 @@ class TrainingConfig(BaseModel):
 
     @property
     def checkpoint_dir_variant(self) -> Path:
-        """Get checkpoint directory for current variant (mirrors variant folder structure)."""
         if self.variant:
             return self.checkpoint_dir / self.variant.relative_dir / self.variant.full_model_name
         return self.checkpoint_dir / "Unet"  # Backward compatibility
 
     @property
     def inference_output_dir_variant(self) -> Path:
-        """Get inference output directory for current variant (mirrors variant folder structure)."""
         if self.variant:
             return Path(PROJECT_ROOT_PATH) / "data" / "simple-infer-output" / self.variant.relative_dir / self.variant.full_model_name
         return Path(PROJECT_ROOT_PATH) / "data" / "simple-infer-output"
 
     @property
     def onnx_export_path_variant(self) -> Path:
-        """Get ONNX export path for current variant (mirrors variant folder structure)."""
         if self.variant:
             onnx_dir = Path(PROJECT_ROOT_PATH) / "data" / "onnx-export" / self.variant.relative_dir
             onnx_dir.mkdir(parents=True, exist_ok=True)
