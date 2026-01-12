@@ -57,21 +57,21 @@ graph LR
 ## Simulation Creation And Export
 
 <p align="center">
-  <img src="assets/blend1.gif" alt="Blend1" width="600"/>
+  <img src="assets/blend1.gif" alt="Blend1" width="450"/>
   &nbsp;&nbsp;&nbsp;
-  <img src="assets/npz1.gif" alt="Blend1" width="350"/>
+  <img src="assets/npz1.gif" alt="Blend1" width="300"/>
 </p>
 
 <p align="center">
-  <img src="assets/blend2.gif" alt="Blend1" width="600"/>
+  <img src="assets/blend2.gif" alt="Blend1" width="450"/>
   &nbsp;&nbsp;&nbsp;
-  <img src="assets/npz2.gif" alt="Blend1" width="350"/>
+  <img src="assets/npz2.gif" alt="Blend1" width="300"/>
 </p>
 
 <p align="center">
-  <img src="assets/blend3.gif" alt="Blend1" width="600"/>
+  <img src="assets/blend3.gif" alt="Blend1" width="450"/>
   &nbsp;&nbsp;&nbsp;
-  <img src="assets/npz3.gif" alt="Blend1" width="350"/>
+  <img src="assets/npz3.gif" alt="Blend1" width="300"/>
 </p>
 
 ## Training & Model Architecture
