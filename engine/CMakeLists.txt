@@ -30,7 +30,7 @@ if(TRACY_ENABLE)
     FetchContent_Declare(
         tracy
         GIT_REPOSITORY https://github.com/wolfpld/tracy.git
-        GIT_TAG v0.11.1
+        GIT_TAG 76e0ab135b2c6513c7af3d5d1fb8063d8da66cd0
         GIT_SHALLOW TRUE
     )
 

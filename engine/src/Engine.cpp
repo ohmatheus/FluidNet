@@ -346,19 +346,27 @@ void Engine::renderFrame_()
     float deltaTime = static_cast<float>(currentTime - m_lastFrameTime);
     m_lastFrameTime = currentTime;
 
-    glfwPollEvents();
+    {
+        PROFILE_SCOPE_NAMED("Poll Events");
+        glfwPollEvents();
+    }
 
     if (m_currentScene)
     {
         m_currentScene->onUpdate(deltaTime);
     }
 
-    // Start ImGui frame
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
+    {
+        PROFILE_SCOPE_NAMED("ImGui NewFrame");
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+    }
 
-    setupDockspace_();
+    {
+        PROFILE_SCOPE_NAMED("Dockspace Setup");
+        setupDockspace_();
+    }
 
     renderEngineDebugWindow_(deltaTime);
 
@@ -369,19 +377,29 @@ void Engine::renderFrame_()
 
     renderViewportWindow_();
 
-    // Render ImGui
-    ImGui::Render();
+    {
+        PROFILE_SCOPE_NAMED("ImGui Render");
+        ImGui::Render();
+    }
 
-    // Clear screen and render ImGui to screen
-    FluidNet::GL::glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    int display_w, display_h;
-    glfwGetFramebufferSize(m_window, &display_w, &display_h);
-    glViewport(0, 0, display_w, display_h);
-    glClear(GL_COLOR_BUFFER_BIT);
+    {
+        PROFILE_SCOPE_NAMED("OpenGL Setup");
+        FluidNet::GL::glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        int display_w, display_h;
+        glfwGetFramebufferSize(m_window, &display_w, &display_h);
+        glViewport(0, 0, display_w, display_h);
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
 
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    {
+        PROFILE_SCOPE_NAMED("ImGui DrawData");
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    }
 
-    glfwSwapBuffers(m_window);
+    {
+        PROFILE_SCOPE_NAMED("Swap Buffers");
+        glfwSwapBuffers(m_window);
+    }
 }
 
 void Engine::setScene(std::unique_ptr<Scene> scene)
