@@ -6,11 +6,12 @@
   <img src="assets/demo_video.webp" alt="FluidNet real-time demo" width="800"/>
 </p>-->
 
-https://github.com/user-attachments/assets/f0d4b3ea-a355-4eec-9ac4-f5091be550eb
+https://github.com/user-attachments/assets/c32d6b8d-7b06-45a5-b370-abdd00fa81d5
+
 
 ## Overview
 
-FluidNet is an interactive real-time fluid simulation system that aims to combines the visual quality of physics-based fluid solvers with the speed of neural network inference (not there yet). A convolutional neural network (UNet) is trained on Blender Mantaflow simulations, then deployed in a C++ engine for interactive autoregressive rollout, and real-time execution.
+FluidNet is an interactive real-time fluid simulation system that aims to combine the visual quality of an interactive physics-based fluid solvers with the speed of neural network inference (not there yet). A convolutional neural network (UNet) is trained on Blender Mantaflow simulations, then deployed in a C++ engine for autoregressive rollout in a real-time execution.
 
 >Note:
 >Everything is currenlty done in 128x128 (simulation cells). This all project is done on a simple computer. While it is theorically possible to make it in higher resolution (eg: 256x256) with the current code, simulation creation and training takes a lot of time. Will redo a pipe in 256x256 later, when time allow me to do so.
@@ -54,6 +55,10 @@ graph LR
 **C++ Engine** → Real-time interactive execution ([engine/README.md](engine/README.md))
 
 ## Simulation Creation And Export
+
+<p align="center">
+  <img src="assets/blend1.webm" alt="Blend1" width="800"/>
+</p>
 
 ## Training & Model Architecture
 
