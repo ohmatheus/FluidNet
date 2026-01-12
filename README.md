@@ -1,6 +1,6 @@
 # FluidNet
 
-**Interactive real-time 2D fluid simulation powered by neural networks**
+**Interactive real-time 2D fluid simulation powered only by neural networks**
 
 <!--<p align="center">
   <img src="assets/demo_video.webp" alt="FluidNet real-time demo" width="800"/>
@@ -116,12 +116,12 @@ The C++ engine provides an interactive environment for experiencing trained flui
 
 **Technology Stack:**
 - **ONNX Runtime**: ML inference with CPU/CUDA execution providers
-- **OpenGL**: Hardware-accelerated rendering
+- **OpenGL**: Rendering
 - **GLFW**: Cross-platform windowing and input
 - **ImGui**: Real-time UI and debugging interface
 
 **Interactive Controls:**
-- Left click + drag: Inject velocity forces
+- Velocity mode + drag: Inject velocity forces
 - Configurable brush radius, force strength, and emission rate
 - Pause, reset, and model switching
 
@@ -141,6 +141,20 @@ For build instructions and usage details, see [engine/README.md](engine/README.m
 ## Getting Started
 
 **Note:** This project is not yet packaged for easy public use. Pre-trained weights will be made available on HuggingFace in the future. However, if you're handy with build systems, everything should work - the engine can be built and trained models exported following the instructions in [engine/README.md](engine/README.md) and [ml/README.md](ml/README.md).
+
+## Performance Notes
+
+Different UNet architectures were tested with varying inference speeds (GPU metrics on RTX 3070):
+
+**Medium UNet (GPU):** ~5ms inference - good balance of quality and speed, handles colliders well
+
+**Small UNet (GPU):** ~1-2ms inference - very fast, but collider behavior isn't quite solved yet (work in progress)
+
+**Small UNet quantized (INT8 CPU):** ~30-35ms inference - on-the-fly quantization without calibration, surprisingly usable and fluid on CPU without a GPU, though collider interactions still need refinement
+
+A key advantage of this approach: inference time is constant regardless of scene complexity. Whether you have one emitter or ten colliders, performance stays the same - unlike traditional physics solvers that scale with complexity.
+
+The goal is to get the smaller/faster models to match the physics quality of the medium architecture while maintaining speed gains.
 
 ## Technical References
 
