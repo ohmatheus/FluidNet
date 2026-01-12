@@ -158,7 +158,7 @@ void Simulation::setSceneSnapshot(const std::atomic<SceneMaskSnapshot*>* snapsho
 
 void Simulation::workerLoop_()
 {
-    PROFILE_SET_THREAD_NAME("Physics Thread");
+    PROFILE_SET_THREAD_NAME("Simulation Thread");
 
     using Clock = std::chrono::high_resolution_clock;
 

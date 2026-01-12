@@ -337,8 +337,8 @@ void Renderer::render(const SimulationBuffer& state)
         // Bind density texture
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, m_densityTexture);
-        FluidNet::GL::glUniform1i(FluidNet::GL::glGetUniformLocation(activeProgram, "densityTexture"),
-                                  0);
+        FluidNet::GL::glUniform1i(
+            FluidNet::GL::glGetUniformLocation(activeProgram, "densityTexture"), 0);
 
         if (m_showDebugOverlay)
         {
