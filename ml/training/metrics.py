@@ -11,7 +11,9 @@ def compute_per_channel_mse(pred: torch.Tensor, target: torch.Tensor) -> dict[st
     return {"mse_density": mse_density, "mse_velx": mse_velx, "mse_vely": mse_vely}
 
 
-def compute_divergence_norm(velx: torch.Tensor, vely: torch.Tensor, dx: float = 1.0, dy: float = 1.0, padding_mode: str = "zeros") -> float:
+def compute_divergence_norm(
+    velx: torch.Tensor, vely: torch.Tensor, dx: float = 1.0, dy: float = 1.0, padding_mode: str = "zeros"
+) -> float:
     """
     L2 norm of velocity divergence.
     Measures incompressibility violation (should be ~0 in free fluid).

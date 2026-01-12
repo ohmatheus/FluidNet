@@ -15,8 +15,8 @@ from config.config import PROJECT_ROOT_PATH
 from config.training_config import TrainingConfig, VariantMetadata, project_config
 from dataset.npz_sequence import FluidNPZSequenceDataset
 from models.unet import UNet, UNetConfig
-from training.trainer import Trainer
 from scripts.variant_manager import VariantManager
+from training.trainer import Trainer
 
 
 def set_seed(seed: int) -> None:
@@ -76,10 +76,12 @@ def dict_to_training_config(config_dict: dict) -> TrainingConfig:
 
     if "augmentation" in config_dict and isinstance(config_dict["augmentation"], dict):
         from config.training_config import AugmentationConfig
+
         config_dict["augmentation"] = AugmentationConfig(**config_dict["augmentation"])
 
     if "physics_loss" in config_dict and isinstance(config_dict["physics_loss"], dict):
         from config.training_config import PhysicsLossConfig
+
         config_dict["physics_loss"] = PhysicsLossConfig(**config_dict["physics_loss"])
 
     return TrainingConfig(**config_dict)
@@ -92,9 +94,9 @@ def train_single_variant(
     device: str | None = None,
     parent_run_id: str | None = None,
 ) -> str:
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print(f"Training variant: {variant_name}")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
     config_dict = manager.build_config_with_inheritance(variant_name)
 
@@ -190,88 +192,92 @@ def train_single_variant(
     mlflow.set_experiment(config.mlflow_experiment_name)
 
     with mlflow.start_run(run_name=config.variant.full_model_name) as run:
-        run_id = run.info.run_id
+        run_id: str = run.info.run_id
 
-        mlflow.set_tags({
-            "variant_name": variant_name,
-            "model_architecture": config.variant.model_architecture_name,
-            "full_model_name": config.variant.full_model_name,
-            "parent_variant": config.variant.parent_variant or "none",
-            "rollout_k": config.rollout_step,
-            "relative_dir": str(config.variant.relative_dir),
-        })
+        mlflow.set_tags(
+            {
+                "variant_name": variant_name,
+                "model_architecture": config.variant.model_architecture_name,
+                "full_model_name": config.variant.full_model_name,
+                "parent_variant": config.variant.parent_variant or "none",
+                "rollout_k": config.rollout_step,
+                "relative_dir": str(config.variant.relative_dir),
+            }
+        )
 
         if parent_run_id:
             mlflow.set_tag("mlflow.parentRunId", parent_run_id)
 
-        mlflow.log_params({
-            # Model identity
-            "model_name": model.__class__.__name__,
-            "model_params": total_params,
-            # Basic training
-            "batch_size": config.batch_size,
-            "learning_rate": config.learning_rate,
-            "epochs": config.epochs,
-            "amp_enabled": config.amp_enabled,
-            "device": config.device,
-            "num_workers": config.num_workers,
-            # Physics loss configuration
-            "physics_loss.mse_weight": config.physics_loss.mse_weight,
-            "physics_loss.divergence_weight": config.physics_loss.divergence_weight,
-            "physics_loss.gradient_weight": config.physics_loss.gradient_weight,
-            "physics_loss.emitter_weight": config.physics_loss.emitter_weight,
-            "physics_loss.enable_divergence": config.physics_loss.enable_divergence,
-            "physics_loss.enable_gradient": config.physics_loss.enable_gradient,
-            "physics_loss.enable_emitter": config.physics_loss.enable_emitter,
-            "physics_loss.grid_spacing": config.physics_loss.grid_spacing,
-            # Gradient clipping
-            "gradient_clip_norm": config.gradient_clip_norm,
-            "gradient_clip_enabled": config.gradient_clip_enabled,
-            # LR scheduler
-            "use_lr_scheduler": config.use_lr_scheduler,
-            "lr_scheduler_type": config.lr_scheduler_type,
-            "lr_scheduler_patience": config.lr_scheduler_patience,
-            "lr_scheduler_factor": config.lr_scheduler_factor,
-            "lr_scheduler_min_lr": config.lr_scheduler_min_lr,
-            "lr_scheduler_step_size": config.lr_scheduler_step_size,
-            "lr_scheduler_t_max": config.lr_scheduler_t_max,
-            # Early stopping
-            "use_early_stopping": config.use_early_stopping,
-            "early_stop_patience": config.early_stop_patience,
-            "early_stop_min_delta": config.early_stop_min_delta,
-            # Dataset configuration
-            "normalize": config.normalize,
-            "split_ratios": str(config.split_ratios),
-            "split_seed": config.split_seed,
-            "preload_dataset": config.preload_dataset,
-            # Augmentation configuration
-            "augmentation.enable": config.augmentation.enable_augmentation,
-            "augmentation.flip_probability": config.augmentation.flip_probability,
-            "augmentation.flip_axis": config.augmentation.flip_axis,
-            # Multi-step rollout training
-            "rollout_step": config.rollout_step,
-            "rollout_weight_decay": config.rollout_weight_decay,
-            "rollout_gradient_truncation": config.rollout_gradient_truncation,
-            "validation_use_rollout_k": config.validation_use_rollout_k,
-            "rollout_final_step_only": config.rollout_final_step_only,
-            # Model architecture
-            "in_channels": config.in_channels,
-            "out_channels": config.out_channels,
-            "base_channels": config.base_channels,
-            "depth": config.depth,
-            "norm": config.norm,
-            "act": config.act,
-            "group_norm_groups": config.group_norm_groups,
-            "dropout": config.dropout,
-            "upsample": config.upsample,
-            "padding_mode": config.padding_mode,
-            "use_residual": config.use_residual,
-            "bottleneck_blocks": config.bottleneck_blocks,
-            "output_activation": config.output_activation,
-            # Checkpoint settings
-            "save_every_n_epochs": config.save_every_n_epochs,
-            "keep_last_n_checkpoints": config.keep_last_n_checkpoints,
-        })
+        mlflow.log_params(
+            {
+                # Model identity
+                "model_name": model.__class__.__name__,
+                "model_params": total_params,
+                # Basic training
+                "batch_size": config.batch_size,
+                "learning_rate": config.learning_rate,
+                "epochs": config.epochs,
+                "amp_enabled": config.amp_enabled,
+                "device": config.device,
+                "num_workers": config.num_workers,
+                # Physics loss configuration
+                "physics_loss.mse_weight": config.physics_loss.mse_weight,
+                "physics_loss.divergence_weight": config.physics_loss.divergence_weight,
+                "physics_loss.gradient_weight": config.physics_loss.gradient_weight,
+                "physics_loss.emitter_weight": config.physics_loss.emitter_weight,
+                "physics_loss.enable_divergence": config.physics_loss.enable_divergence,
+                "physics_loss.enable_gradient": config.physics_loss.enable_gradient,
+                "physics_loss.enable_emitter": config.physics_loss.enable_emitter,
+                "physics_loss.grid_spacing": config.physics_loss.grid_spacing,
+                # Gradient clipping
+                "gradient_clip_norm": config.gradient_clip_norm,
+                "gradient_clip_enabled": config.gradient_clip_enabled,
+                # LR scheduler
+                "use_lr_scheduler": config.use_lr_scheduler,
+                "lr_scheduler_type": config.lr_scheduler_type,
+                "lr_scheduler_patience": config.lr_scheduler_patience,
+                "lr_scheduler_factor": config.lr_scheduler_factor,
+                "lr_scheduler_min_lr": config.lr_scheduler_min_lr,
+                "lr_scheduler_step_size": config.lr_scheduler_step_size,
+                "lr_scheduler_t_max": config.lr_scheduler_t_max,
+                # Early stopping
+                "use_early_stopping": config.use_early_stopping,
+                "early_stop_patience": config.early_stop_patience,
+                "early_stop_min_delta": config.early_stop_min_delta,
+                # Dataset configuration
+                "normalize": config.normalize,
+                "split_ratios": str(config.split_ratios),
+                "split_seed": config.split_seed,
+                "preload_dataset": config.preload_dataset,
+                # Augmentation configuration
+                "augmentation.enable": config.augmentation.enable_augmentation,
+                "augmentation.flip_probability": config.augmentation.flip_probability,
+                "augmentation.flip_axis": config.augmentation.flip_axis,
+                # Multi-step rollout training
+                "rollout_step": config.rollout_step,
+                "rollout_weight_decay": config.rollout_weight_decay,
+                "rollout_gradient_truncation": config.rollout_gradient_truncation,
+                "validation_use_rollout_k": config.validation_use_rollout_k,
+                "rollout_final_step_only": config.rollout_final_step_only,
+                # Model architecture
+                "in_channels": config.in_channels,
+                "out_channels": config.out_channels,
+                "base_channels": config.base_channels,
+                "depth": config.depth,
+                "norm": config.norm,
+                "act": config.act,
+                "group_norm_groups": config.group_norm_groups,
+                "dropout": config.dropout,
+                "upsample": config.upsample,
+                "padding_mode": config.padding_mode,
+                "use_residual": config.use_residual,
+                "bottleneck_blocks": config.bottleneck_blocks,
+                "output_activation": config.output_activation,
+                # Checkpoint settings
+                "save_every_n_epochs": config.save_every_n_epochs,
+                "keep_last_n_checkpoints": config.keep_last_n_checkpoints,
+            }
+        )
 
         trainer = Trainer(
             model=model,
@@ -294,65 +300,48 @@ def train_single_variant(
     return run_id
 
 
-def run_auto_inference(variant_name: str, manager: VariantManager):
-    print(f"\n{'='*80}")
+def run_auto_inference(variant_name: str, manager: VariantManager) -> None:
+    print(f"\n{'=' * 80}")
     print(f"Running auto-inference for {variant_name}")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
     cmd = [
         sys.executable,
         str(Path(__file__).parent / "simple_infer.py"),
-        "--variant", variant_name,
-        "--num-frames", "600",
+        "--variant",
+        variant_name,
+        "--num-frames",
+        "600",
     ]
 
     try:
         subprocess.run(cmd, check=True)
-        print(f"Inference complete")
+        print("Inference complete")
     except subprocess.CalledProcessError as e:
         print(f"WARNING: Inference failed: {e}")
         print("Continuing with training pipeline...")
     except FileNotFoundError:
-        print(f"WARNING: simple_infer.py not found or doesn't support --variant yet")
+        print("WARNING: simple_infer.py not found or doesn't support --variant yet")
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Train FluidNet with hierarchical multi-variant support",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=""
+        epilog="",
     )
 
-    parser.add_argument(
-        "variants",
-        nargs="+",
-        help="One or more variant names to train (e.g., K1_A K2_B)"
-    )
+    parser.add_argument("variants", nargs="+", help="One or more variant names to train (e.g., K1_A K2_B)")
 
     parser.add_argument(
-        "--no-deps",
-        action="store_true",
-        help="Skip automatic dependency resolution (train only specified variants)"
+        "--no-deps", action="store_true", help="Skip automatic dependency resolution (train only specified variants)"
     )
 
-    parser.add_argument(
-        "--force-retrain",
-        action="store_true",
-        help="Force retrain even if checkpoint exists"
-    )
+    parser.add_argument("--force-retrain", action="store_true", help="Force retrain even if checkpoint exists")
 
-    parser.add_argument(
-        "--no-inference",
-        action="store_true",
-        help="Skip automatic inference after training"
-    )
+    parser.add_argument("--no-inference", action="store_true", help="Skip automatic inference after training")
 
-    parser.add_argument(
-        "--device",
-        type=str,
-        default=None,
-        help="Override device (cuda/cpu)"
-    )
+    parser.add_argument("--device", type=str, default=None, help="Override device (cuda/cpu)")
 
     return parser
 
@@ -362,8 +351,7 @@ def main() -> None:
 
     ml_root = Path(__file__).parent.parent
     manager = VariantManager(
-        config_root=ml_root / "config",
-        checkpoints_dir=Path(PROJECT_ROOT_PATH) / "data" / "checkpoints"
+        config_root=ml_root / "config", checkpoints_dir=Path(PROJECT_ROOT_PATH) / "data" / "checkpoints"
     )
 
     print(f"Discovered {len(manager._variants_cache)} variants:")
@@ -378,7 +366,7 @@ def main() -> None:
             print(f"  - {v}")
     else:
         variants_to_train = manager.topological_sort(args.variants)
-        print(f"\nDependency resolution:")
+        print("\nDependency resolution:")
         for v in variants_to_train:
             status = "[REQUESTED]" if v in args.variants else "[DEPENDENCY]"
             print(f"  {status} {v}")
@@ -407,7 +395,7 @@ def main() -> None:
     print(f"\nWill train {len(variants_to_train)} variants")
 
     # Train variants in dependency order
-    run_ids = {}
+    run_ids: dict[str, str] = {}
     for variant_name in variants_to_train:
         parent_variant = manager.get_parent_variant(variant_name)
         parent_run_id = run_ids.get(parent_variant) if parent_variant else None
@@ -422,9 +410,9 @@ def main() -> None:
 
         run_ids[variant_name] = run_id
 
-    print(f"\n{'='*80}")
-    print(f"All training complete!")
-    print(f"{'='*80}")
+    print(f"\n{'=' * 80}")
+    print("All training complete!")
+    print(f"{'=' * 80}")
     print(f"Trained {len(variants_to_train)} variants:")
     for v in variants_to_train:
         print(f"  - {v}")

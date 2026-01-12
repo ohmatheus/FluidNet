@@ -90,7 +90,7 @@ class TrainingConfig(BaseModel):
     use_early_stopping: bool = True
     early_stop_patience: int = 10
     early_stop_min_delta: float = 0
-    
+
     physics_loss: PhysicsLossConfig = PhysicsLossConfig()
 
     variant: VariantMetadata | None = None
@@ -98,7 +98,7 @@ class TrainingConfig(BaseModel):
     # Multi-step rollout training
     rollout_step: int = 0
     rollout_weight_decay: float = 1.10  # not used if rollout_final_step_only is True
-    #    ∂total_loss/∂θ = 
+    #    ∂total_loss/∂θ =
     #    w₀/sum × ∂loss₀/∂θ                     [direct from step 0]
     #  + w₁/sum × ∂loss₁/∂θ                     [direct from step 1]
     #  + w₁/sum × ∂loss₁/∂pred₀ × ∂pred₀/∂θ     [indirect: step 1 through step 0]
@@ -108,8 +108,7 @@ class TrainingConfig(BaseModel):
 
     rollout_gradient_truncation: bool = False
     validation_use_rollout_k: bool = True
-    rollout_final_step_only: bool = False # True use .detach() and makes backward pass indenpendent for each K - Faster, less memory, but less quality learning
-
+    rollout_final_step_only: bool = False  # True use .detach() and makes backward pass indenpendent for each K - Faster, less memory, but less quality learning
 
     @field_validator("rollout_step")
     @classmethod
@@ -127,7 +126,13 @@ class TrainingConfig(BaseModel):
     @property
     def inference_output_dir_variant(self) -> Path:
         if self.variant:
-            return Path(PROJECT_ROOT_PATH) / "data" / "simple-infer-output" / self.variant.relative_dir / self.variant.full_model_name
+            return (
+                Path(PROJECT_ROOT_PATH)
+                / "data"
+                / "simple-infer-output"
+                / self.variant.relative_dir
+                / self.variant.full_model_name
+            )
         return Path(PROJECT_ROOT_PATH) / "data" / "simple-infer-output"
 
     @property

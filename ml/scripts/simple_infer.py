@@ -136,10 +136,7 @@ def main() -> None:
 
     # Use variant manager to resolve paths
     ml_root = Path(__file__).parent.parent
-    manager = VariantManager(
-        config_root=ml_root / "config",
-        checkpoints_dir=PROJECT_ROOT_PATH / "data/checkpoints"
-    )
+    manager = VariantManager(config_root=ml_root / "config", checkpoints_dir=PROJECT_ROOT_PATH / "data/checkpoints")
 
     # Build config to get variant metadata
     config_dict = manager.build_config_with_inheritance(args.variant)
@@ -208,9 +205,9 @@ def main() -> None:
     collider_mask[y_start:y_end, x_start:x_end] = 1.0
 
     # Initialize density=1.0 in emitter region
-    #initial_density_mask = (emitter_mask > 0) & (collider_mask == 0)
-    #state_prev[0] = initial_density_mask.astype(np.float32)
-    #state_current[0] = initial_density_mask.astype(np.float32)
+    # initial_density_mask = (emitter_mask > 0) & (collider_mask == 0)
+    # state_prev[0] = initial_density_mask.astype(np.float32)
+    # state_current[0] = initial_density_mask.astype(np.float32)
 
     print(f"\nStarting autoregressive rollout for {args.num_frames} frames...")
     print("Emitter mask: binary circle (1 inside, 0 outside) - static for all frames")

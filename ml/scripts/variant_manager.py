@@ -1,11 +1,11 @@
-import yaml
-from pathlib import Path
-from typing import Dict, List, Optional, Set
 from copy import deepcopy
+from pathlib import Path
+
+import yaml
 
 
 class VariantManager:
-    def __init__(self, config_root: Path, checkpoints_dir: Path):
+    def __init__(self, config_root: Path, checkpoints_dir: Path) -> None:
         self.config_root = config_root
         self.base_config_path = config_root / "base_config.yaml"
         self.architectures_dir = config_root / "model_architectures"
@@ -14,8 +14,8 @@ class VariantManager:
 
         self._variants_cache = self.discover_variants()
 
-    def discover_variants(self) -> Dict[str, Path]:
-        variants = {}
+    def discover_variants(self) -> dict[str, Path]:
+        variants: dict[str, Path] = {}
         for yaml_file in self.variants_dir.rglob("*.yaml"):
             # Load YAML to get variant_name field
             try:
@@ -24,9 +24,7 @@ class VariantManager:
                 if variant_name:
                     if variant_name in variants:
                         raise ValueError(
-                            f"Duplicate variant name '{variant_name}' found:\n"
-                            f"  {variants[variant_name]}\n"
-                            f"  {yaml_file}"
+                            f"Duplicate variant name '{variant_name}' found:\n  {variants[variant_name]}\n  {yaml_file}"
                         )
                     variants[variant_name] = yaml_file
             except Exception as e:
@@ -45,11 +43,11 @@ class VariantManager:
         yaml_path = self.get_variant_yaml_path(variant_name)
         return yaml_path.parent.relative_to(self.variants_dir)
 
-    def load_yaml(self, path: Path) -> Dict:
-        with open(path, 'r') as f:
+    def load_yaml(self, path: Path) -> dict:
+        with open(path) as f:
             return yaml.safe_load(f) or {}
 
-    def deep_merge(self, base: Dict, override: Dict) -> Dict:
+    def deep_merge(self, base: dict, override: dict) -> dict:
         result = deepcopy(base)
 
         for key, value in override.items():
@@ -60,7 +58,7 @@ class VariantManager:
 
         return result
 
-    def build_config_with_inheritance(self, variant_name: str) -> Dict:
+    def build_config_with_inheritance(self, variant_name: str) -> dict:
         merged = self.load_yaml(self.base_config_path)
 
         # Load variant chain (from root to leaf)
@@ -89,8 +87,7 @@ class VariantManager:
             variant_arch = variant_data.get("model_architecture")
             if variant_arch is not None and variant_arch != arch_name:
                 raise ValueError(
-                    f"Architecture mismatch: {variant_chain[0]} uses {arch_name}, "
-                    f"but {variant} uses {variant_arch}"
+                    f"Architecture mismatch: {variant_chain[0]} uses {arch_name}, but {variant} uses {variant_arch}"
                 )
 
             merged = self.deep_merge(merged, variant_data)
@@ -106,10 +103,10 @@ class VariantManager:
 
         return merged
 
-    def resolve_dependency_chain(self, variant_name: str) -> List[str]:
-        chain = []
-        current = variant_name
-        visited: Set[str] = set()
+    def resolve_dependency_chain(self, variant_name: str) -> list[str]:
+        chain: list[str] = []
+        current: str | None = variant_name
+        visited: set[str] = set()
 
         while current:
             if current in visited:
@@ -124,12 +121,12 @@ class VariantManager:
 
         return list(reversed(chain))  # Root to leaf
 
-    def get_parent_variant(self, variant_name: str) -> Optional[str]:
+    def get_parent_variant(self, variant_name: str) -> str | None:
         variant_path = self.get_variant_yaml_path(variant_name)
         variant_data = self.load_yaml(variant_path)
         return variant_data.get("parent_variant")
 
-    def get_warmstart_checkpoint(self, variant_name: str) -> Optional[Path]:
+    def get_warmstart_checkpoint(self, variant_name: str) -> Path | None:
         parent = self.get_parent_variant(variant_name)
         if not parent:
             return None
@@ -153,8 +150,7 @@ class VariantManager:
 
         if not checkpoint_path.exists():
             raise FileNotFoundError(
-                f"Parent checkpoint not found: {checkpoint_path}\n"
-                f"Train {parent} before training {variant_name}"
+                f"Parent checkpoint not found: {checkpoint_path}\nTrain {parent} before training {variant_name}"
             )
 
         return checkpoint_path
@@ -178,13 +174,13 @@ class VariantManager:
         checkpoint_path = self.checkpoints_dir / relative_dir / full_name / "best_model.pth"
         return checkpoint_path.exists()
 
-    def topological_sort(self, variants: List[str]) -> List[str]:
-        all_variants: Set[str] = set()
+    def topological_sort(self, variants: list[str]) -> list[str]:
+        all_variants: set[str] = set()
         for v in variants:
             all_variants.update(self.resolve_dependency_chain(v))
 
         # Build dependency graph
-        graph: Dict[str, Set[str]] = {v: set() for v in all_variants}
+        graph: dict[str, set[str]] = {v: set() for v in all_variants}
 
         for v in all_variants:
             parent = self.get_parent_variant(v)

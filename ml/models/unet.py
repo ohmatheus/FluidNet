@@ -99,9 +99,13 @@ class Down(nn.Module):
         padding_mode: PaddingType = "zeros",
     ) -> None:
         super().__init__()
-        self.block = ConvBlock(in_ch, out_ch, norm=norm, act=act, groups=groups, dropout=dropout, padding_mode=padding_mode)
+        self.block = ConvBlock(
+            in_ch, out_ch, norm=norm, act=act, groups=groups, dropout=dropout, padding_mode=padding_mode
+        )
         self.res = (
-            ResBlock(out_ch, norm=norm, act=act, groups=groups, dropout=dropout, padding_mode=padding_mode) if use_residual else nn.Identity()
+            ResBlock(out_ch, norm=norm, act=act, groups=groups, dropout=dropout, padding_mode=padding_mode)
+            if use_residual
+            else nn.Identity()
         )
         self.down = nn.Conv2d(out_ch, out_ch, 3, stride=2, padding=1, padding_mode=padding_mode)
 
@@ -141,9 +145,13 @@ class Up(nn.Module):
                 align_corners=False if upsample == "bilinear" else None,
             )
 
-        self.block = ConvBlock(in_ch + skip_ch, out_ch, norm=norm, act=act, groups=groups, dropout=dropout, padding_mode=padding_mode)
+        self.block = ConvBlock(
+            in_ch + skip_ch, out_ch, norm=norm, act=act, groups=groups, dropout=dropout, padding_mode=padding_mode
+        )
         self.res = (
-            ResBlock(out_ch, norm=norm, act=act, groups=groups, dropout=dropout, padding_mode=padding_mode) if use_residual else nn.Identity()
+            ResBlock(out_ch, norm=norm, act=act, groups=groups, dropout=dropout, padding_mode=padding_mode)
+            if use_residual
+            else nn.Identity()
         )
 
     def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
@@ -196,7 +204,9 @@ class UNet(nn.Module):
         if self.cfg.depth < 1:
             raise ValueError("depth must be >= 1")
 
-        self.stem = nn.Conv2d(self.cfg.in_channels, self.cfg.base_channels, 3, padding=1, padding_mode=self.cfg.padding_mode)
+        self.stem = nn.Conv2d(
+            self.cfg.in_channels, self.cfg.base_channels, 3, padding=1, padding_mode=self.cfg.padding_mode
+        )
 
         downs: list[nn.Module] = []
         skip_chs: list[int] = []

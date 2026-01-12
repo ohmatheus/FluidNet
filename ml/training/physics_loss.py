@@ -48,7 +48,9 @@ def compute_spatial_gradients(
     return grad_x, grad_y
 
 
-def compute_divergence(velx: torch.Tensor, vely: torch.Tensor, dx: float = 1.0, dy: float = 1.0, padding_mode: str = "zeros") -> torch.Tensor:
+def compute_divergence(
+    velx: torch.Tensor, vely: torch.Tensor, dx: float = 1.0, dy: float = 1.0, padding_mode: str = "zeros"
+) -> torch.Tensor:
     grad_vx_x, _ = compute_spatial_gradients(velx, dx, dy, padding_mode)
     _, grad_vy_y = compute_spatial_gradients(vely, dx, dy, padding_mode)
 
