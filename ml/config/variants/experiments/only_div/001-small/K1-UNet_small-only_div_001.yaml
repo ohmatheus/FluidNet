@@ -1,0 +1,17 @@
+rollout_step: 1
+variant_name: K1-Unet_small-only_div_001
+parent_variant: null
+model_architecture: UNet_small
+
+learning_rate: 0.001
+epochs: 4
+lr_scheduler_patience: 200
+early_stop_patience: 200
+
+physics_loss:
+  mse_weight: 1.0
+  divergence_weight: 0.01
+  enable_divergence: true
+  enable_gradient: false
+  enable_emitter: false
+

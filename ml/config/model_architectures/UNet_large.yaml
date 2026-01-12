@@ -1,13 +1,13 @@
 in_channels: 6
 out_channels: 3
-base_channels: 32
-depth: 3
+base_channels: 48
+depth: 4
 norm: instance
 act: gelu
 group_norm_groups: 8
 dropout: 0.0
-upsample: nearest
-padding_mode: replicate
+upsample: bilinear
+padding_mode: replicate  # "zeros", "reflect", "replicate", "circular"
 use_residual: true
 bottleneck_blocks: 1
 output_activation: true
