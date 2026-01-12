@@ -103,15 +103,7 @@ void Simulation::stop()
 
 void Simulation::restart()
 {
-    const auto& config = Config::getInstance();
-    int resolution = config.getGridResolution();
-
-    {
-        m_bufferA.allocate(resolution);
-        m_bufferB.allocate(resolution);
-
-        m_front.store(&m_bufferA, std::memory_order_release);
-    }
+    m_restartRequested.store(true, std::memory_order_release);
 }
 
 void Simulation::setModel(const std::string& modelPath, bool forceReload)
@@ -169,6 +161,24 @@ void Simulation::workerLoop_()
 
     while (m_running)
     {
+        if (m_restartRequested.load(std::memory_order_acquire))
+        {
+            const auto& config = Config::getInstance();
+            int resolution = config.getGridResolution();
+
+            m_bufferA.allocate(resolution);
+            m_bufferB.allocate(resolution);
+            m_front.store(&m_bufferA, std::memory_order_release);
+
+            m_sumComputeTimeMs = 0.0f;
+            m_computeTimeSamples = 0;
+            m_lastAvgUpdate = glfwGetTime();
+
+            m_restartRequested.store(false, std::memory_order_release);
+            std::cout << "Simulation restarted by worker thread" << std::endl;
+            continue;
+        }
+
         auto stepStart = Clock::now();
 
         if (m_ortSession)

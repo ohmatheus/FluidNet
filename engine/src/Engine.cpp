@@ -192,7 +192,6 @@ void Engine::renderEngineDebugWindow_(float deltaTime)
 
     ImGui::Separator();
 
-    // Model selector
     if (!m_modelRegistry->getModels().empty())
     {
         const auto& models = m_modelRegistry->getModels();
@@ -204,7 +203,6 @@ void Engine::renderEngineDebugWindow_(float deltaTime)
 
             for (int i = 0; i < static_cast<int>(models.size()); ++i)
             {
-                // Category separator handling
                 if (models[i].relativeDir != currentCategory)
                 {
                     if (i > 0)
@@ -228,7 +226,7 @@ void Engine::renderEngineDebugWindow_(float deltaTime)
                 std::string indent(depth * 2, ' ');
                 std::string displayText = indent + models[i].name;
 
-                // Show precision indicators
+                // Show precision indicators - May remove that
                 std::string precisionInfo;
                 if (models[i].hasFP16Variant && models[i].hasINT8Variant)
                 {
@@ -254,7 +252,7 @@ void Engine::renderEngineDebugWindow_(float deltaTime)
                         {
                             if (auto* sim = fluidScene->getSimulation())
                             {
-                                // Auto-select precision: INT8 for CPU, user preference for GPU
+                                // Auto-select INT8 for CPU
                                 ModelPrecision targetPrecision = sim->isUsingCpu()
                                     ? ModelPrecision::INT8
                                     : m_gpuPrecision;
@@ -289,13 +287,10 @@ void Engine::renderViewportWindow_()
         {
             if (auto* renderer = fluidScene->getRenderer())
             {
-                // Resize framebuffer if viewport size changed
                 renderer->resizeFramebuffer((int)viewportSize.x, (int)viewportSize.y);
 
-                // Render to framebuffer
                 m_currentScene->render();
 
-                // Display framebuffer texture
                 GLuint texID = renderer->getFramebufferTexture();
                 ImGui::Image((ImTextureID)(intptr_t)texID, viewportSize, ImVec2(0, 1),
                              ImVec2(1, 0));
@@ -339,10 +334,8 @@ void Engine::renderFrame_()
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    // Setup dockspace
     setupDockspace_();
 
-    // Render UI windows
     renderEngineDebugWindow_(deltaTime);
 
     if (m_currentScene)
