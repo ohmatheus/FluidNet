@@ -6,7 +6,7 @@
   <img src="assets/demo_video.webp" alt="FluidNet real-time demo" width="800"/>
 </p>-->
 
-https://github.com/user-attachments/assets/29a3d25f-98be-427f-9249-4993fb1a5344
+https://github.com/user-attachments/assets/1edfb597-7546-4dc7-b0b9-5bfa20ab2c97
 
 ## Overview
 
