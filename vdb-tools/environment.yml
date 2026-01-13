@@ -1,0 +1,13 @@
+name: vdb-env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - openvdb  # VDB file I/O - only available via conda
+  - numpy
+  - pyyaml
+  - pillow
+  - pip
+  - pip:
+    - pydantic-settings  # Config management

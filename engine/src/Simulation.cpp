@@ -1,5 +1,6 @@
 #include "Simulation.hpp"
 #include "Config.hpp"
+#include "Profiling.hpp"
 #include "SceneState.hpp"
 #include <GLFW/glfw3.h>
 #include <chrono>
@@ -157,12 +158,17 @@ void Simulation::setSceneSnapshot(const std::atomic<SceneMaskSnapshot*>* snapsho
 
 void Simulation::workerLoop_()
 {
+    PROFILE_SET_THREAD_NAME("Simulation Thread");
+
     using Clock = std::chrono::high_resolution_clock;
 
     while (m_running)
     {
+        PROFILE_SCOPE_NAMED("Simulation Step");
+
         if (m_restartRequested.load(std::memory_order_acquire))
         {
+            PROFILE_SCOPE_NAMED("Restart Handler");
             const auto& config = Config::getInstance();
             int resolution = config.getGridResolution();
 
@@ -197,6 +203,9 @@ void Simulation::workerLoop_()
             // After this call, backBuf will contain t+1
             float inferenceMs = runInferenceStep_(frontBuf, backBuf, sceneSnapshot);
 
+            PROFILE_PLOT("Inference Time (ms)", inferenceMs);
+            PROFILE_PLOT("Target Step Time (ms)", m_targetStepTime * 1000.0f);
+
             m_front.store(backBuf, std::memory_order_release);
             m_sumComputeTimeMs += inferenceMs;
             m_computeTimeSamples++;
@@ -227,6 +236,8 @@ void Simulation::workerLoop_()
 float Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer* backBuf,
                                     const SceneMaskSnapshot* sceneSnapshot)
 {
+    PROFILE_SCOPE_NAMED("ONNX Inference Step");
+
     using Clock = std::chrono::high_resolution_clock;
     float inferenceTimeMs = 0.0f;
     int inputChannels = FluidNet::Config::getInstance().getInputChannels();
@@ -235,47 +246,51 @@ float Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer
     {
         const int gridRes = frontBuf->gridResolution;
         const size_t planeSize = static_cast<size_t>(gridRes) * static_cast<size_t>(gridRes);
-
         const int64_t inputShape[] = {1, inputChannels, gridRes, gridRes};
         const size_t inputSize = inputChannels * planeSize;
 
         std::vector<float> inputData(inputSize);
+        Ort::Value inputTensor = Ort::Value(nullptr);
 
-        std::memcpy(&inputData[0 * planeSize], frontBuf->density.data(), planeSize * sizeof(float));
-        std::memcpy(&inputData[1 * planeSize], frontBuf->velocityX.data(),
-                    planeSize * sizeof(float));
-        std::memcpy(&inputData[2 * planeSize], frontBuf->velocityY.data(),
-                    planeSize * sizeof(float));
-        std::memcpy(&inputData[3 * planeSize], backBuf->density.data(), planeSize * sizeof(float));
-
-        if (sceneSnapshot && !sceneSnapshot->velocityImpulseX.empty() &&
-            !sceneSnapshot->velocityImpulseY.empty())
         {
-            for (size_t i = 0; i < planeSize; ++i)
+            PROFILE_SCOPE_NAMED("Input Tensor Prep");
+            std::memcpy(&inputData[0 * planeSize], frontBuf->density.data(),
+                        planeSize * sizeof(float));
+            std::memcpy(&inputData[1 * planeSize], frontBuf->velocityX.data(),
+                        planeSize * sizeof(float));
+            std::memcpy(&inputData[2 * planeSize], frontBuf->velocityY.data(),
+                        planeSize * sizeof(float));
+            std::memcpy(&inputData[3 * planeSize], backBuf->density.data(),
+                        planeSize * sizeof(float));
+
+            if (sceneSnapshot && !sceneSnapshot->velocityImpulseX.empty() &&
+                !sceneSnapshot->velocityImpulseY.empty())
             {
-                inputData[1 * planeSize + i] += sceneSnapshot->velocityImpulseX[i];
-                inputData[2 * planeSize + i] += sceneSnapshot->velocityImpulseY[i];
+                for (size_t i = 0; i < planeSize; ++i)
+                {
+                    inputData[1 * planeSize + i] += sceneSnapshot->velocityImpulseX[i];
+                    inputData[2 * planeSize + i] += sceneSnapshot->velocityImpulseY[i];
+                }
             }
+
+            if (sceneSnapshot && !sceneSnapshot->emitterMask.empty() &&
+                !sceneSnapshot->colliderMask.empty())
+            {
+                std::memcpy(&inputData[4 * planeSize], sceneSnapshot->emitterMask.data(),
+                            planeSize * sizeof(float));
+                std::memcpy(&inputData[5 * planeSize], sceneSnapshot->colliderMask.data(),
+                            planeSize * sizeof(float));
+            }
+            else
+            {
+                std::fill(&inputData[4 * planeSize], &inputData[6 * planeSize], 0.0f);
+            }
+
+            auto memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+            inputTensor = Ort::Value::CreateTensor<float>(memoryInfo, inputData.data(), inputSize,
+                                                          inputShape, 4);
         }
 
-        if (sceneSnapshot && !sceneSnapshot->emitterMask.empty() &&
-            !sceneSnapshot->colliderMask.empty())
-        {
-            std::memcpy(&inputData[4 * planeSize], sceneSnapshot->emitterMask.data(),
-                        planeSize * sizeof(float));
-            std::memcpy(&inputData[5 * planeSize], sceneSnapshot->colliderMask.data(),
-                        planeSize * sizeof(float));
-        }
-        else
-        {
-            std::fill(&inputData[4 * planeSize], &inputData[6 * planeSize], 0.0f);
-        }
-
-        auto memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-        Ort::Value inputTensor =
-            Ort::Value::CreateTensor<float>(memoryInfo, inputData.data(), inputSize, inputShape, 4);
-
-        // Get input/output names
         Ort::AllocatorWithDefaultOptions allocator;
         auto inputName = m_ortSession->GetInputNameAllocated(0, allocator);
         auto outputName = m_ortSession->GetOutputNameAllocated(0, allocator);
@@ -284,54 +299,63 @@ float Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer
         const char* outputNames[] = {outputName.get()};
 
         auto inferenceStart = Clock::now();
-        auto outputTensors = m_ortSession->Run(Ort::RunOptions{nullptr}, inputNames, &inputTensor,
-                                               1, outputNames, 1);
+
+        std::vector<Ort::Value> outputTensors;
+        {
+            PROFILE_SCOPE_NAMED("ONNX Runtime Execute");
+            PROFILE_ZONE_TEXT("Model Inference", 15);
+            outputTensors = m_ortSession->Run(Ort::RunOptions{nullptr}, inputNames, &inputTensor, 1,
+                                              outputNames, 1);
+        }
+
         auto inferenceEnd = Clock::now();
         inferenceTimeMs =
             std::chrono::duration<float, std::milli>(inferenceEnd - inferenceStart).count();
 
-        // Extract output: [1, 3, H, W] = [density_{t+1}, velx_{t+1}, vely_{t+1}]
-        if (!outputTensors.empty())
         {
-            float* outputData = outputTensors[0].GetTensorMutableData<float>();
-            std::vector<int64_t> outputShape =
-                outputTensors[0].GetTensorTypeAndShapeInfo().GetShape();
-
-            if (outputShape.size() != 4 || outputShape[0] != 1 || outputShape[1] != 3 ||
-                outputShape[2] != gridRes || outputShape[3] != gridRes)
+            PROFILE_SCOPE_NAMED("Output Tensor Extract");
+            if (!outputTensors.empty())
             {
-                std::cerr << "Unexpected ONNX output shape: [";
-                for (size_t i = 0; i < outputShape.size(); ++i)
+                float* outputData = outputTensors[0].GetTensorMutableData<float>();
+                std::vector<int64_t> outputShape =
+                    outputTensors[0].GetTensorTypeAndShapeInfo().GetShape();
+
+                if (outputShape.size() != 4 || outputShape[0] != 1 || outputShape[1] != 3 ||
+                    outputShape[2] != gridRes || outputShape[3] != gridRes)
                 {
-                    std::cerr << outputShape[i] << (i + 1 < outputShape.size() ? "," : "");
+                    std::cerr << "Unexpected ONNX output shape: [";
+                    for (size_t i = 0; i < outputShape.size(); ++i)
+                    {
+                        std::cerr << outputShape[i] << (i + 1 < outputShape.size() ? "," : "");
+                    }
+                    std::cerr << "]\n";
+                    return 0.0f;
                 }
-                std::cerr << "]\n";
-                return 0.0f;
-            }
 
-            if (backBuf->density.size() != planeSize)
-            {
-                backBuf->density.resize(planeSize);
-            }
-            if (backBuf->velocityX.size() != planeSize)
-            {
-                backBuf->velocityX.resize(planeSize);
-            }
-            if (backBuf->velocityY.size() != planeSize)
-            {
-                backBuf->velocityY.resize(planeSize);
-            }
+                if (backBuf->density.size() != planeSize)
+                {
+                    backBuf->density.resize(planeSize);
+                }
+                if (backBuf->velocityX.size() != planeSize)
+                {
+                    backBuf->velocityX.resize(planeSize);
+                }
+                if (backBuf->velocityY.size() != planeSize)
+                {
+                    backBuf->velocityY.resize(planeSize);
+                }
 
-            for (size_t i = 0; i < planeSize; ++i)
-            {
-                backBuf->density[i] = outputData[0 * planeSize + i];   // density_{t+1}
-                backBuf->velocityX[i] = outputData[1 * planeSize + i]; // velx_{t+1}
-                backBuf->velocityY[i] = outputData[2 * planeSize + i]; // vely_{t+1}
-            }
+                for (size_t i = 0; i < planeSize; ++i)
+                {
+                    backBuf->density[i] = outputData[0 * planeSize + i];   // density_{t+1}
+                    backBuf->velocityX[i] = outputData[1 * planeSize + i]; // velx_{t+1}
+                    backBuf->velocityY[i] = outputData[2 * planeSize + i]; // vely_{t+1}
+                }
 
-            backBuf->frameNumber = frontBuf->frameNumber + 1;
-            backBuf->timestamp = glfwGetTime(); // TODO: better timer
-            backBuf->isDirty = true;
+                backBuf->frameNumber = frontBuf->frameNumber + 1;
+                backBuf->timestamp = glfwGetTime();
+                backBuf->isDirty = true;
+            }
         }
     }
     catch (const std::exception& e)

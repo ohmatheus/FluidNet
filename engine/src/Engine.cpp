@@ -3,6 +3,7 @@
 #include "FluidScene.hpp"
 #include "GLLoader.hpp"
 #include "ModelRegistry.hpp"
+#include "Profiling.hpp"
 #include "Scene.hpp"
 #include <GL/gl.h>
 #include <GL/glext.h>
@@ -95,9 +96,17 @@ void Engine::initialize()
 
 void Engine::run()
 {
+    PROFILE_SET_THREAD_NAME("Main Thread");
+
     while (!glfwWindowShouldClose(m_window))
     {
         renderFrame_();
+
+        FluidScene* fluidScene = dynamic_cast<FluidScene*>(m_currentScene.get());
+        if (!fluidScene || fluidScene->isProfilingEnabled())
+        {
+            PROFILE_FRAME_MARK();
+        }
     }
 }
 
@@ -141,6 +150,8 @@ static const char* getPrecisionName(ModelPrecision precision)
 
 void Engine::renderEngineDebugWindow_(float deltaTime)
 {
+    PROFILE_SCOPE_NAMED("Engine Debug UI");
+
     ImGui::Begin("Engine");
     ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
     ImGui::Text("Frame Time: %.2f ms", deltaTime * 1000.0f);
@@ -286,6 +297,8 @@ void Engine::renderEngineDebugWindow_(float deltaTime)
 
 void Engine::renderViewportWindow_()
 {
+    PROFILE_SCOPE_NAMED("Viewport UI");
+
     ImGui::SetNextWindowSize(ImVec2(800.0f, 800.0f), ImGuiCond_Always);
     ImGui::Begin("Viewport");
     ImVec2 viewportSize = ImVec2(800.0f, 800.0f);
@@ -327,23 +340,33 @@ void Engine::renderViewportWindow_()
 
 void Engine::renderFrame_()
 {
+    PROFILE_SCOPE();
+
     double currentTime = glfwGetTime();
     float deltaTime = static_cast<float>(currentTime - m_lastFrameTime);
     m_lastFrameTime = currentTime;
 
-    glfwPollEvents();
+    {
+        PROFILE_SCOPE_NAMED("Poll Events");
+        glfwPollEvents();
+    }
 
     if (m_currentScene)
     {
         m_currentScene->onUpdate(deltaTime);
     }
 
-    // Start ImGui frame
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
+    {
+        PROFILE_SCOPE_NAMED("ImGui NewFrame");
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+    }
 
-    setupDockspace_();
+    {
+        PROFILE_SCOPE_NAMED("Dockspace Setup");
+        setupDockspace_();
+    }
 
     renderEngineDebugWindow_(deltaTime);
 
@@ -354,19 +377,29 @@ void Engine::renderFrame_()
 
     renderViewportWindow_();
 
-    // Render ImGui
-    ImGui::Render();
+    {
+        PROFILE_SCOPE_NAMED("ImGui Render");
+        ImGui::Render();
+    }
 
-    // Clear screen and render ImGui to screen
-    FluidNet::GL::glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    int display_w, display_h;
-    glfwGetFramebufferSize(m_window, &display_w, &display_h);
-    glViewport(0, 0, display_w, display_h);
-    glClear(GL_COLOR_BUFFER_BIT);
+    {
+        PROFILE_SCOPE_NAMED("OpenGL Setup");
+        FluidNet::GL::glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        int display_w, display_h;
+        glfwGetFramebufferSize(m_window, &display_w, &display_h);
+        glViewport(0, 0, display_w, display_h);
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
 
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    {
+        PROFILE_SCOPE_NAMED("ImGui DrawData");
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    }
 
-    glfwSwapBuffers(m_window);
+    {
+        PROFILE_SCOPE_NAMED("Swap Buffers");
+        glfwSwapBuffers(m_window);
+    }
 }
 
 void Engine::setScene(std::unique_ptr<Scene> scene)

@@ -2,6 +2,7 @@
 #include "Config.hpp"
 #include "EngineConfig.hpp"
 #include "GLLoader.hpp"
+#include "Profiling.hpp"
 #include <GL/gl.h>
 #include <GL/glext.h>
 #include <filesystem>
@@ -308,6 +309,8 @@ void Renderer::setDebugOverlay(bool enabled)
 
 void Renderer::render(const SimulationBuffer& state)
 {
+    PROFILE_SCOPE_NAMED("Renderer Draw");
+
     if (!m_initialized)
     {
         return;
@@ -315,45 +318,50 @@ void Renderer::render(const SimulationBuffer& state)
 
     if (state.isDirty)
     {
+        PROFILE_SCOPE_NAMED("Upload to GPU");
         uploadToGPU_(state);
     }
 
-    // Bind framebuffer for offscreen rendering
-    FluidNet::GL::glBindFramebuffer(GL_FRAMEBUFFER, m_framebuffer);
-    glViewport(0, 0, m_fbWidth, m_fbHeight);
-    glClearColor(0, 0.3, 0.5, 1);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    GLuint activeProgram = m_showDebugOverlay ? m_debugShaderProgram : m_shaderProgram;
-    FluidNet::GL::glUseProgram(activeProgram);
-
-    // Bind density texture
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, m_densityTexture);
-    FluidNet::GL::glUniform1i(FluidNet::GL::glGetUniformLocation(activeProgram, "densityTexture"),
-                              0);
-
-    if (m_showDebugOverlay)
     {
-        // Bind emitter texture
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, m_emitterTexture);
-        FluidNet::GL::glUniform1i(
-            FluidNet::GL::glGetUniformLocation(activeProgram, "emitterTexture"), 1);
+        PROFILE_SCOPE_NAMED("OpenGL Draw");
 
-        // Bind collider texture
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, m_colliderTexture);
+        // Bind framebuffer for offscreen rendering
+        FluidNet::GL::glBindFramebuffer(GL_FRAMEBUFFER, m_framebuffer);
+        glViewport(0, 0, m_fbWidth, m_fbHeight);
+        glClearColor(0, 0.3, 0.5, 1);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        GLuint activeProgram = m_showDebugOverlay ? m_debugShaderProgram : m_shaderProgram;
+        FluidNet::GL::glUseProgram(activeProgram);
+
+        // Bind density texture
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, m_densityTexture);
         FluidNet::GL::glUniform1i(
-            FluidNet::GL::glGetUniformLocation(activeProgram, "colliderTexture"), 2);
+            FluidNet::GL::glGetUniformLocation(activeProgram, "densityTexture"), 0);
+
+        if (m_showDebugOverlay)
+        {
+            // Bind emitter texture
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, m_emitterTexture);
+            FluidNet::GL::glUniform1i(
+                FluidNet::GL::glGetUniformLocation(activeProgram, "emitterTexture"), 1);
+
+            // Bind collider texture
+            glActiveTexture(GL_TEXTURE2);
+            glBindTexture(GL_TEXTURE_2D, m_colliderTexture);
+            FluidNet::GL::glUniform1i(
+                FluidNet::GL::glGetUniformLocation(activeProgram, "colliderTexture"), 2);
+        }
+
+        FluidNet::GL::glBindVertexArray(m_vao);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        FluidNet::GL::glBindVertexArray(0);
+
+        // Unbind framebuffer back to screen
+        FluidNet::GL::glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
-
-    FluidNet::GL::glBindVertexArray(m_vao);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
-    FluidNet::GL::glBindVertexArray(0);
-
-    // Unbind framebuffer back to screen
-    FluidNet::GL::glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void Renderer::resizeFramebuffer(int width, int height)

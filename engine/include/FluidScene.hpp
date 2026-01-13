@@ -49,6 +49,11 @@ public:
         return m_renderer.get();
     }
 
+    bool isProfilingEnabled() const
+    {
+        return m_profilingEnabled;
+    }
+
 private:
     std::unique_ptr<Simulation> m_simulation;
     std::unique_ptr<Renderer> m_renderer;
@@ -58,6 +63,7 @@ private:
     bool m_showDebugInfo{true};
     bool m_showDebugOverlay{true};
     bool m_isPaused{false};
+    bool m_profilingEnabled{true};
     float m_simulationFPS{0.0f};
 
     Tool m_currentTool{Tool::Emitter};
