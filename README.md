@@ -160,7 +160,15 @@ The goal is to get the smaller/faster models to match the physics quality of the
 
 ## Technical References
 
-This project builds on research in physics-informed neural networks and learned fluid simulation:
+**Used in this project:**
+
+- **tempoGAN: A Temporally Coherent Generative Model** ([arXiv:1806.02071](https://arxiv.org/pdf/1806.02071))
+  Referenced for physics-aware loss implementations (divergence and gradient losses).
+
+- **Accelerating Eulerian Fluid Simulation with CNNs** ([ICML 2017](https://proceedings.mlr.press/v70/tompson17a/tompson17a.pdf))
+  Foundational work on using CNNs for fluid simulation.
+
+**For future exploration:**
 
 - **Awesome Neural Physics** ([Project Page](https://hhuiwangg.github.io/projects/awesome-neural-physics/))
   Curated collection of papers and resources on physics-informed machine learning.
@@ -168,11 +176,5 @@ This project builds on research in physics-informed neural networks and learned 
 - **PhiFlow: Learning Physics** ([arXiv:2006.08762](https://arxiv.org/pdf/2006.08762))
   Differentiable physics framework for training neural simulators.
 
-- **tempoGAN: A Temporally Coherent Generative Model** ([arXiv:1806.02071](https://arxiv.org/pdf/1806.02071))
-  Temporal coherence in learned fluid simulation using adversarial training.
-
-- **Accelerating Eulerian Fluid Simulation with CNNs** ([ICML 2017](https://proceedings.mlr.press/v70/tompson17a/tompson17a.pdf))
-  Foundational work on using CNNs to accelerate fluid solvers.
-
 - **Transolver: A Fast Transformer Solver for PDEs** ([arXiv:2412.10748](https://arxiv.org/pdf/2412.10748))
-  Recent work on learned PDE solvers using transformers. (Not used but cool paper)
+  Recent work on learned PDE solvers using transformers.
