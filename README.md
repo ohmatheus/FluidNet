@@ -129,14 +129,16 @@ For build instructions and usage details, see [engine/README.md](engine/README.m
 
 ## Visual Examples
 
-<p align="center">
-  <img src="assets/vortex_interaction.gif" alt="Vortex field interactions" width="400"/>
-  <img src="assets/collider_interaction.gif" alt="Fluid interacting with obstacles" width="400"/>
-</p>
+https://github.com/user-attachments/assets/87e762a8-4c94-427e-b96a-97e7c52206fe
 
-<p align="center">
-  <img src="assets/emitter_controls.gif" alt="Interactive emitter and force controls" width="400"/>
-</p>
+https://github.com/user-attachments/assets/50606547-ee24-4d28-b777-5358a2aca9f0
+
+https://github.com/user-attachments/assets/87162cd3-845f-4095-91c6-33c636dd9928
+
+https://github.com/user-attachments/assets/63ff29ba-4b83-41d7-ab16-8c9676a027f5
+
+https://github.com/user-attachments/assets/85eb3ff2-0c59-47c8-919a-bbbe1fd3fdac
+
 
 ## Getting Started
 
