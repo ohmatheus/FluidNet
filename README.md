@@ -13,8 +13,7 @@ https://github.com/user-attachments/assets/c32d6b8d-7b06-45a5-b370-abdd00fa81d5
 
 FluidNet is an interactive real-time fluid simulation system that aims to combine the visual quality of an interactive physics-based fluid solvers with the speed of neural network inference (not there yet). A convolutional neural network (UNet) is trained on Blender Mantaflow simulations, then deployed in a C++ engine for autoregressive rollout in a real-time execution.
 
->Note:
->Everything is currenlty done in 128x128 (simulation cells). This all project is done on a simple computer. While it is theorically possible to make it in higher resolution (eg: 256x256) with the current code, simulation creation and training takes a lot of time. Will redo a pipe in 256x256 later, when time allow me to do so.
+>**Note:** The entire pipeline currently operates at 128×128 resolution. This project was developed on a single consumer-grade machine - while the code supports higher resolutions (256×256+), generating training data and training at higher resolutions requires significant compute time. A higher-resolution pipeline is planned for future work when resources permit.
 
 **Key Features:**
 - Neural network trained on generated Blender/Mantaflow simulations
@@ -99,8 +98,8 @@ A UNet-based encoder-decoder architecture with skip connections. Extensive exper
 ### Loss Functions
 Training involved experimentation with multiple loss components:
 - **MSE Loss** - Standard reconstruction loss
-- **Divergence Penalty** - Enforces incompressibility (∇·v ≈ 0)
-- **Emitter Loss** - Prevents density generation in non-emitter regions
+- **Divergence Penalty** - Enforces fluid incompressibility
+- **Emitter Loss** - Prevents density generation in non-emitter regions, avoid hallucinations
 - **Gradient Loss** - Preserves sharp density features
 
 Different combinations and weightings were tested to balance visual quality and physical realism.
@@ -109,6 +108,15 @@ Different combinations and weightings were tested to balance visual quality and 
 While physics-based metrics (divergence, kinetic energy, collider violations) were tracked during training, most validation came from exporting models and qualitatively evaluating autoregressive rollout behavior to "feel" the fluid dynamics.
 
 For complete training details, see [ml/README.md](ml/README.md).
+
+### Progressive Training (Curriculum Learning)
+
+Models are trained using a staged approach where each K-step model initializes from the previous:
+
+**K1 (1-step)** → **K2 (2-step)** → **K3 (3-step)** → **K4 (4-step)**
+
+Each stage learns to predict further into the future, building on the physics knowledge from the previous stage. This curriculum approach is critical for autoregressive stability - without it, models drift and collapse after a few dozen frames. With K-training, stable rollouts last 600+ frames.
+
 
 ## Real-Time Engine
 
