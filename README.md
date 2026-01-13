@@ -150,7 +150,7 @@ Different UNet architectures were tested with varying inference speeds (GPU metr
 
 **Small UNet (GPU):** ~1-2ms inference - very fast, but collider behavior isn't quite solved yet (work in progress)
 
-**Small UNet quantized (INT8 CPU):** ~30-35ms inference - on-the-fly quantization without calibration, surprisingly usable and fluid on CPU without a GPU, though collider interactions still need refinement
+**Small UNet quantized (INT8 CPU):** ~30-35ms inference - on-the-fly quantization without calibration, surprisingly usable and fluid on CPU without a GPU, though collider interactions still need "refinement"
 
 A key advantage of this approach: inference time is constant regardless of scene complexity. Whether you have one emitter or ten colliders, performance stays the same - unlike traditional physics solvers that scale with complexity.
 
