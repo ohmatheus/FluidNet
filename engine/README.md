@@ -75,7 +75,7 @@ Edit `config.yaml` at the project root to adjust window size, model folder, simu
 
 ## Usage
 
-- **Left click + drag**: Apply velocity forces
+- **Velocity mode + drag**: Apply velocity forces
 - **Right click**: Inject density
 - **Scroll**: Adjust brush radius
 - **Spacebar**: Pause/resume

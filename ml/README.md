@@ -31,7 +31,7 @@ I experimented a lot with the architecture:
 
 Multiple model sizes were tested (small, medium) trying to balance quality vs inference speed. Smaller models run faster but struggle with complex physics like collider interactions.
 
-## Multistep K Training - The Breakthrough
+## Multistep K Training
 
 This is the game-changer that made everything work more realistically.
 
@@ -44,7 +44,7 @@ Instead of training the model to predict frame `t+1` from frame `t`, I train it 
 This forces the network to learn dynamics that are stable over longer horizons. It has to deal with its own errors during training, so it learns to not make them in the first place.
 
 **Why it matters:**
-- Without K training: models drift after a few dozen frames
+- Without K training: models drift after a few hundreds frames
 - With K training: stable rollouts for hundreds of frames
 - This is what enables the real-time engine to run autoregressively without exploding
 
@@ -59,7 +59,38 @@ I started with K=1, then moved to K=2, then K=3, eventually K=4. The higher K, t
 
 The training system allows configuring parameters independently for each K value, making it easy to experiment with different configurations (loss weights, learning rate, etc.) without starting from scratch.
 
-Single-step training is the naive approach. Multistep autoregressive training is what makes a neural fluid simulator actually work in practice.
+Single-step training was the naive approach. Multistep autoregressive training is what makes a neural fluid simulator actually work in practice.
+
+### Rollout Weight Decay: How It Works
+
+The `rollout_weight_decay` parameter (currently 1.10) controls how much each step in the K-rollout contributes to the total loss. Values > 1.0 progressively emphasize later frames, which is important for long-term stability.
+
+**For K=3 with weight_decay=1.10, the weights are [1.0, 1.10, 1.21]:**
+
+The total gradient combines direct and indirect paths:
+```
+∂total_loss/∂θ includes:
+
+Direct gradients (each step's loss computed independently):
+  w₀/sum × ∂loss₀/∂θ                     [direct from step 0]
++ w₁/sum × ∂loss₁/∂θ                     [direct from step 1]
++ w₂/sum × ∂loss₂/∂θ                     [direct from step 2]
+
+Indirect gradients (flowing back through previous predictions):
++ w₁/sum × ∂loss₁/∂pred₀ × ∂pred₀/∂θ     [step 1 through step 0]
++ w₂/sum × ∂loss₂/∂pred₁ × ∂pred₁/∂θ     [step 2 through step 1]
++ w₂/sum × ∂loss₂/∂pred₀ × ∂pred₀/∂θ     [step 2 through step 0]
+
+Where sum = w₀ + w₁ + w₂ (normalization)
+```
+
+**Why values > 1.0 help:**
+- Emphasizes later frames in the rollout
+- Model learns to prioritize long-term accuracy over immediate prediction
+- Helps combat error accumulation in autoregressive inference
+- Too high (>1.5) causes instability; 1.10 is a sweet spot
+
+Since gradient truncation is disabled (`rollout_gradient_truncation: false`), all these indirect gradient paths remain active. This means the network sees how its current-step predictions affect future steps during training.
 
 ## Loss Functions & Experiments
 
@@ -73,10 +104,71 @@ Initially these felt important. But once I switched to multistep K training, mos
 
 I'm still using divergence penalty, but honestly unsure if it's actually helping. Mostly experimentation at this point to figure out what matters.
 
-<p align="center">
-  <img src="../assets/loss_components.png" alt="Loss components over training" width="600"/>
-</p>
-<p align="center"><em>MSE and divergence loss over epochs</em></p>
+## Curriculum Learning in Practice
+
+The K1→K2→K3→K4 progression is built into the training system through a hierarchical variant configuration.
+
+### The Variant Hierarchy
+
+Each variant file specifies its rollout step and parent:
+
+```yaml
+# K1: Start from scratch
+variants/experiments/only_div/001/K1-Unet_medium-only_div_001.yaml
+  rollout_step: 1
+  parent_variant: null
+  learning_rate: 0.001
+  epochs: 3
+
+# K2: Load K1 weights, train 2-step rollout
+K2-Unet_medium-only_div_001.yaml
+  rollout_step: 2
+  parent_variant: K1-Unet_medium-only_div_001
+  learning_rate: 0.0006
+  epochs: 6
+
+# K3: Load K2 weights, train 3-step rollout
+K3-Unet_medium-only_div_001.yaml
+  rollout_step: 3
+  parent_variant: K2-Unet_medium-only_div_001
+  learning_rate: 0.0003
+  epochs: 9
+
+# K4: Load K3 weights, train 4-step rollout (with plateau LR scheduler and early stopping)
+K4-Unet_medium-only_div_001.yaml
+  rollout_step: 4
+  parent_variant: K3-Unet_medium-only_div_001
+  learning_rate: 0.0001
+  epochs: 100
+```
+
+### Why Learning Rate Decreases
+
+Each K stage is fine-tuning on top of already-learned physics:
+- **K1:** Learning basic fluid dynamics from scratch → higher LR okay
+- **K2-K4:** Extending temporal horizon on stable features → lower LR prevents disrupting what's already learned
+
+The progressive LR reduction matches the increasing task difficulty and decreasing "room for improvement."
+
+### Automatic Parent Loading
+
+The `variant_manager.py` system handles checkpoint inheritance automatically. When you train K4, it:
+1. Resolves the dependency chain: K4 → K3 → K2 → K1
+2. Loads `best_model.pth` from K3's checkpoint directory
+3. Initializes K4 model with K3 weights
+4. Starts training with K4's config (rollout_step=4, lower LR)
+
+This means each stage starts from a model that already understands fluid physics at the (K-1) level.
+
+### Systematic Experimentation
+
+The variant system enables organized ablation studies:
+- **baseline/**: Full physics loss (MSE + divergence + emitter + gradient)
+- **no_phys/**: MSE only, no physics constraints
+- **only_div/001/**: MSE + 0.001 divergence weight
+- **only_div/005/**: MSE + 0.01 divergence weight
+
+Each experiment family has its own K1→K4 progression. This makes it easy to compare: "Does higher divergence weight improve K4 stability?" without re-implementing everything.
 
 ## Validation
 
@@ -95,10 +187,28 @@ But those metrics don't tell the whole story. A model can have low divergence an
 
 That qualitative evaluation is where you actually learn what the model can and can't do.
 
-<p align="center">
-  <img src="../assets/trainvalloss.png" alt="Training curves" width="600"/>
-</p>
-<p align="center"><em>Training and validation losses with learning rate schedule (example run, not necessarily the demo model)</em></p>
+
+### Alternative Approaches Tried
+
+**Gradient loss (sharp features):**
+- Preserved sharp smoke boundaries during training
+- But created artifacts during long autoregressive rollouts
+- Trade-off: single-frame sharpness vs 600-frame stability → chose stability
+
+**Emitter loss (prevent hallucinations):**
+- Successfully prevented density spawning in empty regions
+- But caused instability in some scenarios
+- Interfered with natural smoke advection
+
+**Full physics loss (MSE + div + emitter + gradient):**
+- Too many competing objectives
+- Model couldn't balance them effectively
+- Worse results than divergence-only
+
+**Current best: MSE + divergence only**
+- Simpler loss landscape
+- Model focuses on core physics (incompressibility)
+- K-rollout naturally enforces other constraints through temporal consistency
 
 ## The Workflow
 
@@ -149,12 +259,75 @@ python scripts/export_to_onnx.py
 
 The ONNX model goes to `data/onnx/` where the engine can load it.
 
-## What's Next
+## Limitations & Future Work
 
-The multistep K training approach works well, but there's still room for improvement:
-- Better training data diversity (more complex scenarios, better coverage of edge cases)
-- Understanding which losses actually matter (divergence penalty: useful or placebo?)
-- Faster models that maintain physics quality (small UNets still struggle with colliders)
-- Trying different architectures: transformers, implicit neural representations
+The current model achieves stable 600+ frame rollouts, which was the goal. But there's definitely room for improvement.
 
-This pipeline produces models that run in real-time and simulate believable fluid dynamics.
+### Current Limitations
+
+**Divergence norm higher than ideal:**
+- Currently stabilizes around 0.30
+- Ideal would be closer to 0.05-0.10 for stricter incompressibility
+- Affects long-term mass conservation slightly
+- Trade-off: lower divergence often creates other artifacts
+
+**Validation plateau while Train don't:**
+- Suggests limited dataset diversity
+- Model exhausts learnable signal early
+- More varied scenarios would likely push this later
+
+**Training data bottleneck:**
+- Limited by single-machine Blender simulation generation
+- Creating and processing sims takes hours
+- Dataset size: enough for proof of concept, but more data = better generalization
+- Need: more emitter/collider configurations, wider range of initial conditions, turbulent scenarios
+
+**Architecture exploration limited:**
+- Only tried UNet variants (small, medium, large)
+- Didn't experiment with:
+  - Fourier Neural Operators (FNO) - better at PDEs theoretically
+  - Transformers for temporal attention
+  - Hybrid CNN + attention architectures
+  - Graph neural networks for irregular domains
+
+### What Could Be Better
+
+**Physics accuracy vs stability:**
+- Current model prioritizes rollout stability over single-frame physics accuracy
+- A better model would achieve both
+- Might require more sophisticated loss balancing or architecture
+
+**Small models & colliders:**
+- Small UNet (fast inference) struggles with collider interactions
+- Medium UNet handles colliders well but slower
+- Goal: match medium's physics quality at small's speed
+
+**Quantization:**
+- INT8 quantization works but slightly degrades collider behavior
+- Need better calibration or quantization-aware training
+
+### What I'd Try Next
+
+1. **More training data:**
+   - Generate 2-3x more Blender simulations
+   - Better scenario coverage (complex multi-collider setups, high-velocity turbulence)
+   - Expected result: validation plateau pushed further, better generalization
+
+2. **Architecture experiments:**
+   - FNO: theoretically better for PDEs, might achieve lower divergence
+   - Vision transformers: could capture long-range fluid interactions better
+   - Hybrid: CNN encoder + transformer temporal reasoning
+
+3. **Loss function refinement:**
+   - Adaptive loss weighting (automatically balance MSE vs divergence)
+   - Multi-scale divergence penalty (enforce incompressibility at different resolutions)
+   - Adversarial training (like tempoGAN) for more realistic fluid textures
+
+4. **Better validation:**
+   - Automated rollout tests during training (not just single-step validation)
+   - Physics-based metrics at multiple K values (K=10, K=20, K=50 rollout tests)
+   - Benchmark against traditional solvers on standardized scenarios
+
+The current model works and achieves the project goals. But these improvements would take it from "works well enough" to "approaches production quality."
+
+This pipeline produces models that run in real-time and simulate believable fluid dynamics, now it's about refinement.
