@@ -32,12 +32,13 @@ def create_fresh_scene() -> None:
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
 
-def create_fluid_domain(resolution: int) -> Any:
+def create_fluid_domain(resolution: int, params: dict[str, Any]) -> Any:
     bpy.ops.object.select_all(action="DESELECT")
     bpy.ops.mesh.primitive_cube_add(location=(0, 0, 0))
     domain = bpy.context.active_object
     domain.name = "Domain"
-    domain.scale = (1.0, 0.05, 1.0)
+    domain_y_scale = params.get("domain_y_scale", 0.05)
+    domain.scale = (1.0, domain_y_scale, 1.0)
 
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
 
@@ -59,11 +60,13 @@ def create_fluid_domain(resolution: int) -> Any:
     domain_settings.use_collision_border_left = False
     domain_settings.use_collision_border_right = False
 
-    domain_settings.vorticity = 0.05
-    domain_settings.beta = 0.0
+    vorticity = params.get("domain_vorticity", 0.05)
+    beta = params.get("domain_beta", 0.0)
+    domain_settings.vorticity = vorticity
+    domain_settings.beta = beta
     domain_settings.delete_in_obstacle = True
 
-    print(f"Created fluid domain: resolution={resolution}, vorticity=0.1, heat=0 (beta=0), delete_in_obstacle=True")
+    print(f"Created fluid domain: resolution={resolution}, vorticity={vorticity}, beta={beta}, delete_in_obstacle=True")
     return domain
 
 
@@ -107,9 +110,9 @@ def clamp_to_bounds(position: tuple, margin: float = 0.1) -> tuple:
     return (x, y, z)
 
 
-def animate_mesh(obj: Any, mesh_type: str, frames: int) -> None:
+def animate_mesh(obj: Any, mesh_type: str, frames: int, params: dict[str, Any]) -> None:
     start_pos = obj.location.copy()
-    max_displacement = 1e-5
+    max_displacement = params.get("anim_max_displacement", 1e-5)
 
     middle_x = start_pos.x + random.uniform(-max_displacement, max_displacement)
     middle_z = start_pos.z + random.uniform(-max_displacement, max_displacement)
@@ -201,24 +204,28 @@ def create_complex_shape(
 
 
 def create_random_meshes(
-    seed: int, frames: int, collider_mode: str = "medium", no_emitters: bool = False, no_colliders: bool = False
+    seed: int, frames: int, params: dict[str, Any],
+    collider_mode: str = "medium", no_emitters: bool = False, no_colliders: bool = False,
 ) -> list[dict[str, Any]]:
     random.seed(seed)
 
-    # Determine emitter and collider counts
+    emitter_count_range = params.get("emitter_count_range", [1, 2])
+    collider_count_medium_range = params.get("collider_count_medium_range", [1, 2])
+    collider_count_complex_range = params.get("collider_count_complex_range", [2, 3])
+
     if no_emitters:
         num_emitters = 0
     else:
-        num_emitters = random.randint(1, 2)
+        num_emitters = random.randint(emitter_count_range[0], emitter_count_range[1])
 
     if no_colliders:
         num_colliders = 0
     elif collider_mode == "simple":
         num_colliders = 0
     elif collider_mode == "medium":
-        num_colliders = random.randint(1, 2)
+        num_colliders = random.randint(collider_count_medium_range[0], collider_count_medium_range[1])
     else:  # complex
-        num_colliders = random.randint(2, 3)
+        num_colliders = random.randint(collider_count_complex_range[0], collider_count_complex_range[1])
     num_meshes = num_emitters + num_colliders
 
     print(
@@ -238,32 +245,44 @@ def create_random_meshes(
     random.shuffle(collider_types)
     collider_type_iter = iter(collider_types)
 
-    # Alignment strategy for colliders: choose axis and base position
-    align_axis = random.choice(["x", "z"])  # Which axis to align along
+    collider_z_range = params.get("collider_z_range", [0.1, 1.0])
+
+    align_axis = random.choice(["x", "z"])
     if align_axis == "x":
-        # Align colliders along X axis (varying X, fixed Z with small variation)
-        align_base_z = random.uniform(0.1, 1.0)  # Upper region
+        align_base_z = random.uniform(collider_z_range[0], collider_z_range[1])
     else:
-        # Align colliders along Z axis (varying Z, fixed X with small variation)
-        align_base_x = random.uniform(-0.5, 0.5)  # Center region
+        align_base_x = random.uniform(-0.5, 0.5)
 
     collider_index = 0
 
-    # First pass: place all emitters and record positions
+    emitter_x_range = params.get("emitter_x_range", [-1.0, 1.0])
+    emitter_z_range = params.get("emitter_z_range", [-1.0, -0.2])
+    emitter_scale_min = params.get("emitter_scale_min", 0.1)
+    emitter_scale_max_simple = params.get("emitter_scale_max_simple", 0.15)
+    emitter_scale_max = params.get("emitter_scale_max", 0.2)
+    emitter_y_scale = params.get("emitter_y_scale", 0.1)
+    large_emitter_threshold = params.get("large_emitter_threshold", 0.12)
+    large_emitter_x_range = params.get("large_emitter_x_range", [-0.6, 0.6])
+    large_emitter_z = params.get("large_emitter_z", -0.75)
+    collider_scale_min = params.get("collider_simple_scale_min", 0.08)
+    collider_scale_max = params.get("collider_simple_scale_max", 0.18)
+    collider_y_scale = params.get("collider_simple_y_scale", 0.1)
+    complex_scale_min = params.get("collider_complex_scale_min", 0.3)
+    complex_scale_max = params.get("collider_complex_scale_max", 0.6)
+
     emitter_positions = []
 
     for i, role in enumerate(roles):
         if role == "Emitter":
-            x = random.uniform(-1, 1)
-            z = random.uniform(-1, -0.2)
+            x = random.uniform(emitter_x_range[0], emitter_x_range[1])
+            z = random.uniform(emitter_z_range[0], emitter_z_range[1])
             position = (x, 0, z)
             emitter_positions.append(position)
         else:
             if len(emitter_positions) > 0:
                 emitter_center_x = sum(p[0] for p in emitter_positions) / len(emitter_positions)
 
-                # Place colliders in upper region [0.1, 1.0] above emitters
-                z = 0.1 + (collider_index * 0.9 / max(1, num_colliders - 1)) if num_colliders > 1 else 0.5
+                z = collider_z_range[0] + (collider_index * (collider_z_range[1] - collider_z_range[0]) / max(1, num_colliders - 1)) if num_colliders > 1 else 0.5
                 x = emitter_center_x + random.uniform(-0.05, 0.05)
             else:
                 if align_axis == "x":
@@ -271,23 +290,20 @@ def create_random_meshes(
                     x += random.uniform(-0.1, 0.1)
                     z = align_base_z + random.uniform(-0.05, 0.05)
                 else:
-                    z = 0.1 + (collider_index * 0.9 / max(1, num_colliders - 1)) if num_colliders > 1 else 0.5
+                    z = collider_z_range[0] + (collider_index * (collider_z_range[1] - collider_z_range[0]) / max(1, num_colliders - 1)) if num_colliders > 1 else 0.5
                     z += random.uniform(-0.05, 0.05)
                     x = align_base_x + random.uniform(-0.05, 0.05)
 
             collider_index += 1
             position = (x, 0, z)
 
-        # position = (x, 0, z)  # Moved up into if/else blocks
-
         if role == "Emitter":
             mesh_type = random.choice(["CUBE", "SPHERE"])
+            max_scale = emitter_scale_max_simple if collider_mode == "simple" else emitter_scale_max
 
             if mesh_type == "CUBE":
-                # Reduce max scale - was 0.3, now mode-dependent
-                max_scale = 0.15 if collider_mode == "simple" else 0.2
-                scale_x = random.uniform(0.1, max_scale)
-                scale_z = random.uniform(0.1, max_scale)
+                scale_x = random.uniform(emitter_scale_min, max_scale)
+                scale_z = random.uniform(emitter_scale_min, max_scale)
 
                 bpy.ops.mesh.primitive_cube_add(location=position)
                 obj = bpy.context.active_object
@@ -295,33 +311,29 @@ def create_random_meshes(
                 rotation_y = random.uniform(0, 360) * (3.14159 / 180)
                 obj.rotation_euler = (0, rotation_y, 0)
 
-                obj.scale = (scale_x, 0.1, scale_z)
+                obj.scale = (scale_x, emitter_y_scale, scale_z)
 
-                # For simple scenes with large emitters, center at bottom
-                if collider_mode == "simple" and (scale_x > 0.12 or scale_z > 0.12):
-                    pos_x = random.uniform(-0.6, 0.6)
-                    position = (pos_x, 0, -0.75)
+                if collider_mode == "simple" and (scale_x > large_emitter_threshold or scale_z > large_emitter_threshold):
+                    pos_x = random.uniform(large_emitter_x_range[0], large_emitter_x_range[1])
+                    position = (pos_x, 0, large_emitter_z)
                     obj.location = position
             else:
-                # Reduce max scale - was 0.3, now mode-dependent
-                max_scale = 0.15 if collider_mode == "simple" else 0.2
-                uniform_scale = random.uniform(0.1, max_scale)
+                uniform_scale = random.uniform(emitter_scale_min, max_scale)
 
                 bpy.ops.mesh.primitive_uv_sphere_add(location=position)
                 obj = bpy.context.active_object
 
                 obj.scale = (uniform_scale, uniform_scale, uniform_scale)
 
-                # For simple scenes with large emitters, center at bottom
-                if collider_mode == "simple" and uniform_scale > 0.12:
-                    pos_x = random.uniform(-0.6, 0.6)
-                    position = (pos_x, 0, -0.75)
+                if collider_mode == "simple" and uniform_scale > large_emitter_threshold:
+                    pos_x = random.uniform(large_emitter_x_range[0], large_emitter_x_range[1])
+                    position = (pos_x, 0, large_emitter_z)
                     obj.location = position
 
             obj.name = f"{role}_{i + 1}"
             obj.animation_data_create()
             configure_emitter(obj)
-            animate_mesh(obj, mesh_type, frames)
+            animate_mesh(obj, mesh_type, frames, params)
 
             actual_scale = obj.scale
 
@@ -351,8 +363,8 @@ def create_random_meshes(
                 mesh_type = random.choice(["CUBE", "SPHERE"])
 
                 if mesh_type == "CUBE":
-                    scale_x = random.uniform(0.08, 0.18)
-                    scale_z = random.uniform(0.08, 0.18)
+                    scale_x = random.uniform(collider_scale_min, collider_scale_max)
+                    scale_z = random.uniform(collider_scale_min, collider_scale_max)
 
                     bpy.ops.mesh.primitive_cube_add(location=position)
                     obj = bpy.context.active_object
@@ -360,9 +372,9 @@ def create_random_meshes(
                     rotation_y = random.uniform(0, 360) * (3.14159 / 180)
                     obj.rotation_euler = (0, rotation_y, 0)
 
-                    obj.scale = (scale_x, 0.1, scale_z)
+                    obj.scale = (scale_x, collider_y_scale, scale_z)
                 else:
-                    uniform_scale = random.uniform(0.08, 0.18)
+                    uniform_scale = random.uniform(collider_scale_min, collider_scale_max)
 
                     bpy.ops.mesh.primitive_uv_sphere_add(location=position)
                     obj = bpy.context.active_object
@@ -374,7 +386,7 @@ def create_random_meshes(
                 configure_collider(obj)
 
                 if num_emitters == 0:
-                    animate_mesh(obj, mesh_type, frames)
+                    animate_mesh(obj, mesh_type, frames, params)
 
                 actual_scale = obj.scale
 
@@ -399,7 +411,7 @@ def create_random_meshes(
 
             else:
                 shape_type = random.choice(["T", "L", "cross", "stairs"])
-                overall_scale = random.uniform(0.3, 0.6)
+                overall_scale = random.uniform(complex_scale_min, complex_scale_max)
                 rotation_y = random.uniform(0, 360) * (3.14159 / 180)
 
                 objects = create_complex_shape(shape_type, position, role, overall_scale, rotation_y, i + 1)
@@ -408,7 +420,7 @@ def create_random_meshes(
                 parent.animation_data_create()
 
                 if num_emitters == 0:
-                    animate_mesh(parent, "CUBE", frames)
+                    animate_mesh(parent, "CUBE", frames, params)
 
                 meshes_info.append(
                     {
@@ -527,10 +539,11 @@ def main() -> None:
         print(f"{'=' * 60}\n")
 
         create_fresh_scene()
-        domain = create_fluid_domain(params["resolution"])
+        domain = create_fluid_domain(params["resolution"], params)
         meshes_info = create_random_meshes(
             params["seed"],
             params["frames"],
+            params,
             params.get("collider_mode", "medium"),
             params.get("no_emitters", False),
             params.get("no_colliders", False),

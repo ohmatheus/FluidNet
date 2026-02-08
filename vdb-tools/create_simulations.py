@@ -13,8 +13,41 @@ from config import vdb_config
 PROJECT_ROOT = Path(__file__).parent.parent
 BLENDER_SCRIPT = Path(__file__).parent / "blender_scripts/create_random_simulation.py"
 
+#todo move all of that to yaml config file
+# and add explanation for each parameters
 NO_EMITTER_PCT = 0.15
 NO_COLLIDER_PCT = 0.50
+
+COLLIDER_MODE_SIMPLE_THRESHOLD = 0.20
+COLLIDER_MODE_MEDIUM_THRESHOLD = 0.80
+
+EMITTER_COUNT_RANGE = (1, 2)
+COLLIDER_COUNT_MEDIUM_RANGE = (1, 2)
+COLLIDER_COUNT_COMPLEX_RANGE = (2, 3)
+
+EMITTER_SCALE_MIN = 0.1
+EMITTER_SCALE_MAX_SIMPLE = 0.2
+EMITTER_SCALE_MAX = 0.3
+EMITTER_Y_SCALE = 0.1
+
+COLLIDER_SIMPLE_SCALE_MIN = 0.08
+COLLIDER_SIMPLE_SCALE_MAX = 0.25
+COLLIDER_SIMPLE_Y_SCALE = 0.1
+COLLIDER_COMPLEX_SCALE_MIN = 0.3
+COLLIDER_COMPLEX_SCALE_MAX = 0.8
+
+EMITTER_X_RANGE = (-1.0, 1.0)
+EMITTER_Z_RANGE = (-1.0, -0.2)
+COLLIDER_Z_RANGE = (0.1, 1.0)
+LARGE_EMITTER_THRESHOLD = 0.12
+LARGE_EMITTER_X_RANGE = (-0.6, 0.6)
+LARGE_EMITTER_Z = -0.75
+
+DOMAIN_Y_SCALE = 0.05
+DOMAIN_VORTICITY = 0.05
+DOMAIN_BETA = 0.0
+
+ANIM_MAX_DISPLACEMENT = 1e-5
 
 
 def check_cache_exists(cache_dir: Path) -> bool:
@@ -65,6 +98,28 @@ def generate_simulation(
         "collider_mode": collider_mode,
         "no_emitters": no_emitters,
         "no_colliders": no_colliders,
+        "emitter_count_range": list(EMITTER_COUNT_RANGE),
+        "collider_count_medium_range": list(COLLIDER_COUNT_MEDIUM_RANGE),
+        "collider_count_complex_range": list(COLLIDER_COUNT_COMPLEX_RANGE),
+        "emitter_scale_min": EMITTER_SCALE_MIN,
+        "emitter_scale_max_simple": EMITTER_SCALE_MAX_SIMPLE,
+        "emitter_scale_max": EMITTER_SCALE_MAX,
+        "emitter_y_scale": EMITTER_Y_SCALE,
+        "collider_simple_scale_min": COLLIDER_SIMPLE_SCALE_MIN,
+        "collider_simple_scale_max": COLLIDER_SIMPLE_SCALE_MAX,
+        "collider_simple_y_scale": COLLIDER_SIMPLE_Y_SCALE,
+        "collider_complex_scale_min": COLLIDER_COMPLEX_SCALE_MIN,
+        "collider_complex_scale_max": COLLIDER_COMPLEX_SCALE_MAX,
+        "emitter_x_range": list(EMITTER_X_RANGE),
+        "emitter_z_range": list(EMITTER_Z_RANGE),
+        "collider_z_range": list(COLLIDER_Z_RANGE),
+        "large_emitter_threshold": LARGE_EMITTER_THRESHOLD,
+        "large_emitter_x_range": list(LARGE_EMITTER_X_RANGE),
+        "large_emitter_z": LARGE_EMITTER_Z,
+        "domain_y_scale": DOMAIN_Y_SCALE,
+        "domain_vorticity": DOMAIN_VORTICITY,
+        "domain_beta": DOMAIN_BETA,
+        "anim_max_displacement": ANIM_MAX_DISPLACEMENT,
     }
 
     blender_path = vdb_config.BLENDER_PATH
@@ -172,11 +227,10 @@ def main() -> None:
         frames = random.randint(args.min_frames, args.max_frames)
         sim_seed = base_seed + sim_index
 
-        # Assign collider mode based on distribution
         rand_val = random.random()
-        if rand_val < 0.20:
+        if rand_val < COLLIDER_MODE_SIMPLE_THRESHOLD:
             collider_mode = "simple"
-        elif rand_val < 0.80:
+        elif rand_val < COLLIDER_MODE_MEDIUM_THRESHOLD:
             collider_mode = "medium"
         else:
             collider_mode = "complex"
