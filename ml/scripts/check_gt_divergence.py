@@ -8,12 +8,13 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from training.physics_loss import compute_divergence
 
-
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "npz" / "128"
 OUTPUT_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "analysis"
 
 
-def compute_masked_divergence_rmse(velx, velz, emitter, collider, eps=1e-8):
+def compute_masked_divergence_rmse(
+    velx: np.ndarray, velz: np.ndarray, emitter: np.ndarray, collider: np.ndarray, eps: float = 1e-8
+) -> float:
     vx = torch.from_numpy(velx).unsqueeze(0)  # (1, H, W)
     vz = torch.from_numpy(velz).unsqueeze(0)
     div = compute_divergence(vx, vz)  # (1, H, W)
@@ -30,7 +31,7 @@ def compute_masked_divergence_rmse(velx, velz, emitter, collider, eps=1e-8):
     return rmse
 
 
-def main():
+def main() -> None:
     npz_files = sorted(DATA_DIR.glob("seq_*.npz"))
     if not npz_files:
         print(f"No seq_*.npz files found in {DATA_DIR}")
@@ -43,7 +44,7 @@ def main():
 
     for npz_path in npz_files:
         data = np.load(npz_path)
-        velx = data["velx"]      # (T, H, W)
+        velx = data["velx"]  # (T, H, W)
         velz = data["velz"]
         emitter = data.get("emitter", np.zeros_like(velx))
         collider = data.get("collider", np.zeros_like(velx))
@@ -59,11 +60,11 @@ def main():
         seq_avg_divs.append(avg)
         print(f"  {npz_path.stem}: {T} frames, avg divergence RMSE = {avg:.6f}")
 
-    seq_avg_divs = np.array(seq_avg_divs)
-    print(f"\nOverall: mean={seq_avg_divs.mean():.6f}, min={seq_avg_divs.min():.6f}, max={seq_avg_divs.max():.6f}")
+    avg_divs_arr = np.array(seq_avg_divs)
+    print(f"\nOverall: mean={avg_divs_arr.mean():.6f}, min={avg_divs_arr.min():.6f}, max={avg_divs_arr.max():.6f}")
 
     fig, ax = plt.subplots(figsize=(max(8, len(seq_names) * 0.4), 5))
-    ax.bar(range(len(seq_names)), seq_avg_divs, color="steelblue")
+    ax.bar(range(len(seq_names)), avg_divs_arr, color="steelblue")
     ax.axhline(y=0.1, color="red", linestyle="--", label="threshold (0.1)")
     ax.set_xlabel("Sequence")
     ax.set_ylabel("Avg Divergence RMSE (fluid-only)")

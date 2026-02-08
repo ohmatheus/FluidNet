@@ -204,8 +204,12 @@ def create_complex_shape(
 
 
 def create_random_meshes(
-    seed: int, frames: int, params: dict[str, Any],
-    collider_mode: str = "medium", no_emitters: bool = False, no_colliders: bool = False,
+    seed: int,
+    frames: int,
+    params: dict[str, Any],
+    collider_mode: str = "medium",
+    no_emitters: bool = False,
+    no_colliders: bool = False,
 ) -> list[dict[str, Any]]:
     random.seed(seed)
 
@@ -282,7 +286,12 @@ def create_random_meshes(
             if len(emitter_positions) > 0:
                 emitter_center_x = sum(p[0] for p in emitter_positions) / len(emitter_positions)
 
-                z = collider_z_range[0] + (collider_index * (collider_z_range[1] - collider_z_range[0]) / max(1, num_colliders - 1)) if num_colliders > 1 else 0.5
+                z = (
+                    collider_z_range[0]
+                    + (collider_index * (collider_z_range[1] - collider_z_range[0]) / max(1, num_colliders - 1))
+                    if num_colliders > 1
+                    else 0.5
+                )
                 x = emitter_center_x + random.uniform(-0.05, 0.05)
             else:
                 if align_axis == "x":
@@ -290,7 +299,12 @@ def create_random_meshes(
                     x += random.uniform(-0.1, 0.1)
                     z = align_base_z + random.uniform(-0.05, 0.05)
                 else:
-                    z = collider_z_range[0] + (collider_index * (collider_z_range[1] - collider_z_range[0]) / max(1, num_colliders - 1)) if num_colliders > 1 else 0.5
+                    z = (
+                        collider_z_range[0]
+                        + (collider_index * (collider_z_range[1] - collider_z_range[0]) / max(1, num_colliders - 1))
+                        if num_colliders > 1
+                        else 0.5
+                    )
                     z += random.uniform(-0.05, 0.05)
                     x = align_base_x + random.uniform(-0.05, 0.05)
 
@@ -313,7 +327,9 @@ def create_random_meshes(
 
                 obj.scale = (scale_x, emitter_y_scale, scale_z)
 
-                if collider_mode == "simple" and (scale_x > large_emitter_threshold or scale_z > large_emitter_threshold):
+                if collider_mode == "simple" and (
+                    scale_x > large_emitter_threshold or scale_z > large_emitter_threshold
+                ):
                     pos_x = random.uniform(large_emitter_x_range[0], large_emitter_x_range[1])
                     position = (pos_x, 0, large_emitter_z)
                     obj.location = position

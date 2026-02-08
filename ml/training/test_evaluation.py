@@ -3,6 +3,7 @@ import tempfile
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 import mlflow
 import numpy as np
 import torch
@@ -41,7 +42,8 @@ def _compute_batch_metrics(
     metrics: dict[str, float] = {}
     metrics.update(compute_per_channel_mse(outputs, targets))
     metrics["divergence_norm"] = compute_divergence_norm(
-        velx_pred, vely_pred,
+        velx_pred,
+        vely_pred,
         dx=config.physics_loss.grid_spacing,
         dy=config.physics_loss.grid_spacing,
         padding_mode=config.padding_mode,
@@ -61,7 +63,7 @@ def run_test_evaluation(
     config: TrainingConfig,
     test_indices: list[int],
     device: str,
-) -> dict[str, float]:
+) -> dict[str, dict[str, float]]:
     if not test_indices:
         print("No test indices provided, skipping test evaluation.")
         return {}
@@ -156,7 +158,7 @@ def _print_results_table(model: dict[str, float], persistence: dict[str, float])
 
 
 ROLLOUT_STEPS = 20
-STARTING_POINTS = [20, "middle", -21]
+STARTING_POINTS: list[int | str] = [20, "middle", -21]
 
 
 def _get_starting_frames(total_frames: int) -> list[int]:
@@ -167,7 +169,7 @@ def _get_starting_frames(total_frames: int) -> list[int]:
         elif isinstance(sp, int) and sp < 0:
             t = total_frames + sp
         else:
-            t = sp
+            t = int(sp)
 
         if t >= 1 and t + ROLLOUT_STEPS < total_frames:
             starts.append(t)
@@ -199,12 +201,8 @@ def _run_single_rollout(
     vx_t = norm(vx[t_start], "S_velx")
     vz_t = norm(vz[t_start], "S_velz")
 
-    state_current = torch.tensor(
-        np.stack([d_t, vx_t, vz_t], axis=0), dtype=torch.float32, device=device
-    ).unsqueeze(0)
-    state_prev = torch.tensor(
-        d_tminus[np.newaxis], dtype=torch.float32, device=device
-    ).unsqueeze(0)
+    state_current = torch.tensor(np.stack([d_t, vx_t, vz_t], axis=0), dtype=torch.float32, device=device).unsqueeze(0)
+    state_prev = torch.tensor(d_tminus[np.newaxis], dtype=torch.float32, device=device).unsqueeze(0)
 
     step_metrics: list[dict[str, float]] = []
 
@@ -212,12 +210,8 @@ def _run_single_rollout(
         t_cur = t_start + k
         t_next = t_start + k + 1
 
-        emitter_t = torch.tensor(
-            emitter[t_cur][np.newaxis], dtype=torch.float32, device=device
-        ).unsqueeze(0)
-        collider_t = torch.tensor(
-            collider[t_cur][np.newaxis], dtype=torch.float32, device=device
-        ).unsqueeze(0)
+        emitter_t = torch.tensor(emitter[t_cur][np.newaxis], dtype=torch.float32, device=device).unsqueeze(0)
+        collider_t = torch.tensor(collider[t_cur][np.newaxis], dtype=torch.float32, device=device).unsqueeze(0)
 
         model_input = torch.cat([state_current, state_prev, emitter_t, collider_t], dim=1)
 
@@ -231,19 +225,19 @@ def _run_single_rollout(
         gt_d = norm(d[t_next], "S_density")
         gt_vx = norm(vx[t_next], "S_velx")
         gt_vz = norm(vz[t_next], "S_velz")
-        gt = torch.tensor(
-            np.stack([gt_d, gt_vx, gt_vz], axis=0), dtype=torch.float32, device=device
-        ).unsqueeze(0)
+        gt = torch.tensor(np.stack([gt_d, gt_vx, gt_vz], axis=0), dtype=torch.float32, device=device).unsqueeze(0)
 
         mse_density = torch.mean((pred[:, 0] - gt[:, 0]) ** 2).item()
         mse_velx = torch.mean((pred[:, 1] - gt[:, 1]) ** 2).item()
         mse_vely = torch.mean((pred[:, 2] - gt[:, 2]) ** 2).item()
 
-        step_metrics.append({
-            "mse_density": mse_density,
-            "mse_velx": mse_velx,
-            "mse_vely": mse_vely,
-        })
+        step_metrics.append(
+            {
+                "mse_density": mse_density,
+                "mse_velx": mse_velx,
+                "mse_vely": mse_vely,
+            }
+        )
 
         # Autoregressive update
         state_prev = state_current[:, 0:1, :, :]
@@ -252,7 +246,7 @@ def _run_single_rollout(
     return step_metrics
 
 
-def _plot_rollout_degradation(avg_per_step: list[dict[str, float]]) -> plt.Figure:
+def _plot_rollout_degradation(avg_per_step: list[dict[str, float]]) -> Figure:
     steps = list(range(1, len(avg_per_step) + 1))
     mse_d = [s["mse_density"] for s in avg_per_step]
     mse_vx = [s["mse_velx"] for s in avg_per_step]
@@ -273,7 +267,7 @@ def _plot_rollout_degradation(avg_per_step: list[dict[str, float]]) -> plt.Figur
     return fig
 
 
-def log_artifact_flat(fig: plt.Figure, filename: str, dpi: int = 72, artifact_path: str = "plots") -> None:
+def log_artifact_flat(fig: Figure, filename: str, dpi: int = 72, artifact_path: str = "plots") -> None:
     tmp_dir = tempfile.mkdtemp()
     try:
         path = Path(tmp_dir) / filename
@@ -295,9 +289,7 @@ def run_rollout_evaluation(
         return {}
 
     npz_dir = config.npz_dir / str(project_config.simulation.grid_resolution)
-    all_seq_paths = sorted(
-        [p for p in npz_dir.iterdir() if p.name.startswith("seq_") and p.name.endswith(".npz")]
-    )
+    all_seq_paths = sorted([p for p in npz_dir.iterdir() if p.name.startswith("seq_") and p.name.endswith(".npz")])
     test_paths = [all_seq_paths[i] for i in test_indices]
 
     norm_scales = None
@@ -330,9 +322,7 @@ def run_rollout_evaluation(
             starting_frames = _get_starting_frames(T)
 
             for t_start in starting_frames:
-                step_metrics = _run_single_rollout(
-                    model, data, t_start, norm_scales, device, config.amp_enabled
-                )
+                step_metrics = _run_single_rollout(model, data, t_start, norm_scales, device, config.amp_enabled)
                 for k, m in enumerate(step_metrics):
                     all_rollouts[k].append(m)
                 total_rollouts += 1

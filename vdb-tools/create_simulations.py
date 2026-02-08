@@ -13,7 +13,7 @@ from config import vdb_config
 PROJECT_ROOT = Path(__file__).parent.parent
 BLENDER_SCRIPT = Path(__file__).parent / "blender_scripts/create_random_simulation.py"
 
-#todo move all of that to yaml config file
+# todo move all of that to yaml config file
 # and add explanation for each parameters
 NO_EMITTER_PCT = 0.15
 NO_COLLIDER_PCT = 0.50
