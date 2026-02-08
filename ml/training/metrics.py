@@ -1,4 +1,5 @@
 import torch
+from torchmetrics.functional.image import structural_similarity_index_measure
 
 from training.physics_loss import compute_divergence
 
@@ -9,6 +10,15 @@ def compute_per_channel_mse(pred: torch.Tensor, target: torch.Tensor) -> dict[st
     mse_vely = torch.mean((pred[:, 2] - target[:, 2]) ** 2).item()
 
     return {"mse_density": mse_density, "mse_velx": mse_velx, "mse_vely": mse_vely}
+
+
+def compute_ssim_density(pred: torch.Tensor, target: torch.Tensor) -> float:
+    density_pred = pred[:, 0:1, :, :]
+    density_target = target[:, 0:1, :, :]
+    result = structural_similarity_index_measure(density_pred, density_target, data_range=1.0)
+    if isinstance(result, tuple):
+        result = result[0]
+    return result.item()
 
 
 def compute_divergence_norm(

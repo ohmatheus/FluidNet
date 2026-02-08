@@ -25,6 +25,7 @@ from training.metrics import (
     compute_emitter_density_accuracy,
     compute_kinetic_energy,
     compute_per_channel_mse,
+    compute_ssim_density,
 )
 from training.physics_loss import PhysicsAwareLoss
 
@@ -102,6 +103,7 @@ class Trainer:
             "val_kinetic_energy": [],
             "val_collider_violation": [],
             "val_emitter_accuracy": [],
+            "val_ssim_density": [],
         }
 
         if self.config.physics_loss.enable_divergence:
@@ -287,6 +289,8 @@ class Trainer:
                     batch_metrics["emitter_density_accuracy"] = compute_emitter_density_accuracy(
                         density_pred, emitter_mask, expected_injection=0.8
                     )
+
+                    batch_metrics["ssim_density"] = compute_ssim_density(outputs, target_for_metrics)
 
                     metrics_tracker.update(batch_metrics)
 
@@ -573,10 +577,12 @@ class Trainer:
         axes[4].legend()
         axes[4].grid(True, alpha=0.3)
 
-        axes[5].plot(epochs, self.history["val_total"], color="black", linewidth=2)
-        axes[5].set_title("Total Validation Loss")
+        axes[5].plot(epochs, self.history["val_ssim_density"], color="teal", linewidth=2)
+        axes[5].axhline(y=0.9, color="green", linestyle="--", label="Target > 0.9")
+        axes[5].set_title("SSIM (Density)")
         axes[5].set_xlabel("Epoch")
-        axes[5].set_ylabel("Loss")
+        axes[5].set_ylabel("SSIM")
+        axes[5].legend()
         axes[5].grid(True, alpha=0.3)
 
         # Check if log scale needed for MSE
@@ -625,6 +631,7 @@ class Trainer:
             self.history["val_kinetic_energy"].append(val_losses.get("kinetic_energy", 0.0))
             self.history["val_collider_violation"].append(val_losses.get("collider_violation", 0.0))
             self.history["val_emitter_accuracy"].append(val_losses.get("emitter_density_accuracy", 0.0))
+            self.history["val_ssim_density"].append(val_losses.get("ssim_density", 0.0))
 
             if self.config.physics_loss.enable_divergence:
                 self.history["train_divergence"].append(train_losses.get("divergence", 0.0))
