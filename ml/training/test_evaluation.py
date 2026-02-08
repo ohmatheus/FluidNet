@@ -3,11 +3,11 @@ import tempfile
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-from matplotlib.figure import Figure
 import mlflow
 import numpy as np
 import torch
 import torch.nn as nn
+from matplotlib.figure import Figure
 from torch.amp.autocast_mode import autocast
 from torch.utils.data import DataLoader
 from tqdm import tqdm
