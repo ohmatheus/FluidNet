@@ -13,7 +13,7 @@ from config.training_config import TrainingConfig, VariantMetadata, project_conf
 from dataset.npz_sequence import FluidNPZSequenceDataset
 from models.unet import UNet, UNetConfig
 from scripts.variant_manager import VariantManager
-from training.test_evaluation import run_test_evaluation
+from training.test_evaluation import run_rollout_evaluation, run_test_evaluation
 from training.trainer import Trainer
 from utils.data_splits import make_splits, set_seed
 
@@ -242,6 +242,12 @@ def train_single_variant(
 
         if test_idx:
             run_test_evaluation(
+                model=model,
+                config=config,
+                test_indices=test_idx,
+                device=config.device,
+            )
+            run_rollout_evaluation(
                 model=model,
                 config=config,
                 test_indices=test_idx,

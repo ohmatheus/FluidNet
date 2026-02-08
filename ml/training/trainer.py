@@ -1,4 +1,3 @@
-import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -28,6 +27,7 @@ from training.metrics import (
     compute_ssim_density,
 )
 from training.physics_loss import PhysicsAwareLoss
+from training.test_evaluation import log_artifact_flat
 
 
 class Trainer:
@@ -682,58 +682,22 @@ class Trainer:
 
         try:
             fig = self.plot_training_history()
-
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False, mode="wb") as tmp_file:
-                tmp_path = tmp_file.name
-                fig.savefig(tmp_path, dpi=150, bbox_inches="tight")
-
-            mlflow.log_artifact(tmp_path, artifact_path="plots/training_loss_and_lr.png")
-
-            Path(tmp_path).unlink()
-            plt.close(fig)
-
+            log_artifact_flat(fig, "training_loss_and_lr.png", dpi=144)
             print("Training history plot saved to MLflow artifacts")
-
-        except ValueError as e:
-            print(f"Warning: Could not generate training history plot - {e}")
         except Exception as e:
             print(f"Warning: Failed to generate/save training history plot - {e}")
 
         try:
             fig_metrics = self.plot_metrics_grid()
-
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False, mode="wb") as tmp_file:
-                tmp_path = tmp_file.name
-                fig_metrics.savefig(tmp_path, dpi=150, bbox_inches="tight")
-
-            mlflow.log_artifact(tmp_path, artifact_path="plots/validation_metrics_grid.png")
-
-            Path(tmp_path).unlink()
-            plt.close(fig_metrics)
-
+            log_artifact_flat(fig_metrics, "validation_metrics_grid.png", dpi=90)
             print("Metrics grid plot saved to MLflow artifacts")
-
-        except ValueError as e:
-            print(f"Warning: Could not generate metrics grid plot - {e}")
         except Exception as e:
             print(f"Warning: Failed to generate/save metrics grid plot - {e}")
 
         try:
             fig_loss_components = self.plot_loss_components()
-
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False, mode="wb") as tmp_file:
-                tmp_path = tmp_file.name
-                fig_loss_components.savefig(tmp_path, dpi=150, bbox_inches="tight")
-
-            mlflow.log_artifact(tmp_path, artifact_path="plots/loss_components.png")
-
-            Path(tmp_path).unlink()
-            plt.close(fig_loss_components)
-
+            log_artifact_flat(fig_loss_components, "loss_components.png", dpi=90)
             print("Loss components plot saved to MLflow artifacts")
-
-        except ValueError as e:
-            print(f"Warning: Could not generate loss components plot - {e}")
         except Exception as e:
             print(f"Warning: Failed to generate/save loss components plot - {e}")
 
