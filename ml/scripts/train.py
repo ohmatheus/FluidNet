@@ -1,12 +1,9 @@
 import argparse
-import random
 import subprocess
 import sys
 from pathlib import Path
-from typing import cast
 
 import mlflow
-import numpy as np
 import torch
 import torch.multiprocessing as mp
 from torch.utils.data import DataLoader
@@ -16,57 +13,9 @@ from config.training_config import TrainingConfig, VariantMetadata, project_conf
 from dataset.npz_sequence import FluidNPZSequenceDataset
 from models.unet import UNet, UNetConfig
 from scripts.variant_manager import VariantManager
+from training.test_evaluation import run_test_evaluation
 from training.trainer import Trainer
-
-
-def set_seed(seed: int) -> None:
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-
-
-def make_splits(
-    npz_dir: Path, split_ratios: tuple[float, float, float], seed: int
-) -> tuple[list[int], list[int], list[int]]:
-    seq_paths = sorted([p for p in npz_dir.iterdir() if p.name.startswith("seq_") and p.name.endswith(".npz")])
-    n_seq = len(seq_paths)
-
-    if n_seq < 1:
-        raise ValueError(f"Need at least 1 sequence, found {n_seq}")
-
-    indices = list(range(n_seq))
-    random.Random(seed).shuffle(indices)
-
-    ratio_sum = sum(split_ratios)
-    if ratio_sum == 0:
-        normalized_ratios = (1 / 3, 1 / 3, 1 / 3)
-    else:
-        normalized_ratios = cast("tuple[float, float, float]", tuple(r / ratio_sum for r in split_ratios))
-
-    # Allocate all sequences based on ratios
-    allocated = [int(r * n_seq) for r in normalized_ratios]
-
-    # Distribute leftover sequences to splits with highest fractional parts
-    leftover = n_seq - sum(allocated)
-    if leftover > 0:
-        fractional_parts = [(r * n_seq) % 1 for r in normalized_ratios]
-        sorted_indices = sorted(range(3), key=lambda i: fractional_parts[i], reverse=True)
-        for i in range(leftover):
-            allocated[sorted_indices[i]] += 1
-
-    n_train = allocated[0]
-    n_val = allocated[1]
-    n_test = allocated[2]
-
-    assert n_train + n_val + n_test == n_seq
-
-    train_idx = indices[:n_train]
-    val_idx = indices[n_train : n_train + n_val]
-    test_idx = indices[n_train + n_val :]
-
-    return train_idx, val_idx, test_idx
+from utils.data_splits import make_splits, set_seed
 
 
 def dict_to_training_config(config_dict: dict) -> TrainingConfig:
@@ -290,6 +239,14 @@ def train_single_variant(
         )
 
         trainer.train()
+
+        if test_idx:
+            run_test_evaluation(
+                model=model,
+                config=config,
+                test_indices=test_idx,
+                device=config.device,
+            )
 
         print(f"\nTraining complete: {config.variant.full_model_name}")
         print(f"Best model: {config.checkpoint_dir_variant / 'best_model.pth'}")

@@ -6,7 +6,7 @@ num_workers: 4
 
 # Dataset
 normalize: true
-split_ratios: [0.80, 0.20, 0.0]
+split_ratios: [0.70, 0.15, 0.15]
 split_seed: 42
 preload_dataset: true
 
@@ -22,7 +22,7 @@ gradient_clip_enabled: true
 
 # MLflow
 mlflow_tracking_uri: ./mlruns
-mlflow_experiment_name: fluid_hierarchical_v1
+mlflow_experiment_name: fluid_hierarchical_v1.1
 
 # === OVERRIDABLE PARAMS ===
 
@@ -31,7 +31,7 @@ epochs: 200
 
 # Checkpoints
 save_every_n_epochs: 5
-keep_last_n_checkpoints: 20
+keep_last_n_checkpoints: 3
 
 # Learning rate
 learning_rate: 0.0007
@@ -70,5 +70,5 @@ early_stop_patience: 10
 early_stop_min_delta: 0.0
 
 # Auto-inference (call simple-infer for quick autoregressive simulation)
-auto_inference_enabled: true
+auto_inference_enabled: false
 auto_inference_num_frames: 600

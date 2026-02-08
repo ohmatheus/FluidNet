@@ -46,7 +46,7 @@ class TrainingConfig(BaseModel):
     # Dataset settings
     npz_dir: Path = Path(PROJECT_ROOT_PATH / project_config.vdb_tools.npz_output_directory)
     normalize: bool = True
-    split_ratios: tuple[float, float, float] = (0.80, 0.20, 0)  # train, val, test - to change
+    split_ratios: tuple[float, float, float] = (0.70, 0.15, 0.15)
     split_seed: int = 42
     augmentation: AugmentationConfig = AugmentationConfig()
     preload_dataset: bool = True
