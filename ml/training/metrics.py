@@ -22,7 +22,11 @@ def compute_ssim_density(pred: torch.Tensor, target: torch.Tensor) -> float:
 
 
 def compute_gradient_l1(
-    density_pred: torch.Tensor, density_target: torch.Tensor, dx: float = 1.0, dy: float = 1.0, padding_mode: str = "zeros"
+    density_pred: torch.Tensor,
+    density_target: torch.Tensor,
+    dx: float = 1.0,
+    dy: float = 1.0,
+    padding_mode: str = "zeros",
 ) -> float:
     """
     L1 loss between predicted and target density gradients.

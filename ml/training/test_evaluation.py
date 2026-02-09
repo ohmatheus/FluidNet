@@ -398,7 +398,9 @@ def run_rollout_evaluation(
             starting_frames = _get_starting_frames(T)
 
             for t_start in starting_frames:
-                step_metrics = _run_single_rollout(model, data, t_start, norm_scales, device, config.amp_enabled, config)
+                step_metrics = _run_single_rollout(
+                    model, data, t_start, norm_scales, device, config.amp_enabled, config
+                )
                 for k, m in enumerate(step_metrics):
                     all_rollouts[k].append(m)
                 total_rollouts += 1
