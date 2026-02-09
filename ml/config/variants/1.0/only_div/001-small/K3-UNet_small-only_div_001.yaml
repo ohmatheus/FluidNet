@@ -1,0 +1,9 @@
+rollout_step: 3
+parent_variant: K2-Unet_small-only_div_001
+variant_name: K3-Unet_small-only_div_001
+
+
+learning_rate: 0.0005
+epochs: 20
+lr_scheduler_patience: 2
+early_stop_patience: 5

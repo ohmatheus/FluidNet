@@ -1,0 +1,16 @@
+rollout_step: 1
+variant_name: simple-Unet_medium-only_mse
+parent_variant: null
+model_architecture: UNet_medium
+
+learning_rate: 0.001
+epochs: 100
+lr_scheduler_patience: 4
+early_stop_patience: 10
+
+physics_loss:
+  mse_weight: 1.0
+  enable_divergence: false
+  enable_gradient: false
+  enable_emitter: false
+
