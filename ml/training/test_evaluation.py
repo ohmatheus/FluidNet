@@ -21,6 +21,7 @@ from training.metrics import (
     compute_collider_violation,
     compute_divergence_norm,
     compute_emitter_density_accuracy,
+    compute_gradient_l1,
     compute_kinetic_energy,
     compute_per_channel_mse,
     compute_ssim_density,
@@ -54,6 +55,13 @@ def _compute_batch_metrics(
         density_pred, emitter_mask, expected_injection=0.8
     )
     metrics["ssim_density"] = compute_ssim_density(outputs, targets)
+    metrics["gradient_l1"] = compute_gradient_l1(
+        density_pred,
+        targets[:, 0, :, :],
+        dx=config.physics_loss.grid_spacing,
+        dy=config.physics_loss.grid_spacing,
+        padding_mode=config.padding_mode,
+    )
 
     return metrics
 
@@ -144,6 +152,7 @@ def _print_results_table(model: dict[str, float], persistence: dict[str, float])
         ("mse_vely", "MSE Vel-Y"),
         ("divergence_norm", "Divergence Norm"),
         ("ssim_density", "SSIM Density"),
+        ("gradient_l1", "Gradient L1"),
         ("collider_violation", "Collider Violation"),
         ("emitter_density_accuracy", "Emitter Accuracy"),
         ("kinetic_energy", "Kinetic Energy"),
@@ -157,8 +166,8 @@ def _print_results_table(model: dict[str, float], persistence: dict[str, float])
     print("=" * 70)
 
 
-ROLLOUT_STEPS = 20
-STARTING_POINTS: list[int | str] = [20, "middle", -21]
+ROLLOUT_STEPS = 30
+STARTING_POINTS: list[int | str] = [20, "middle", -31]
 
 
 def _get_starting_frames(total_frames: int) -> list[int]:
@@ -183,6 +192,7 @@ def _run_single_rollout(
     norm_scales: dict[str, float] | None,
     device: str,
     use_amp: bool,
+    config: TrainingConfig,
 ) -> list[dict[str, float]]:
     d = data["density"]
     vx = data["velx"]
@@ -230,12 +240,41 @@ def _run_single_rollout(
         mse_density = torch.mean((pred[:, 0] - gt[:, 0]) ** 2).item()
         mse_velx = torch.mean((pred[:, 1] - gt[:, 1]) ** 2).item()
         mse_vely = torch.mean((pred[:, 2] - gt[:, 2]) ** 2).item()
+        ssim_density = compute_ssim_density(pred, gt)
+
+        divergence_norm = compute_divergence_norm(
+            pred[:, 1, :, :],
+            pred[:, 2, :, :],
+            dx=config.physics_loss.grid_spacing,
+            dy=config.physics_loss.grid_spacing,
+            padding_mode=config.padding_mode,
+        )
+
+        divergence_norm_gt = compute_divergence_norm(
+            gt[:, 1, :, :],
+            gt[:, 2, :, :],
+            dx=config.physics_loss.grid_spacing,
+            dy=config.physics_loss.grid_spacing,
+            padding_mode=config.padding_mode,
+        )
+
+        gradient_l1 = compute_gradient_l1(
+            pred[:, 0, :, :],
+            gt[:, 0, :, :],
+            dx=config.physics_loss.grid_spacing,
+            dy=config.physics_loss.grid_spacing,
+            padding_mode=config.padding_mode,
+        )
 
         step_metrics.append(
             {
                 "mse_density": mse_density,
                 "mse_velx": mse_velx,
                 "mse_vely": mse_vely,
+                "ssim_density": ssim_density,
+                "divergence_norm": divergence_norm,
+                "divergence_norm_gt": divergence_norm_gt,
+                "gradient_l1": gradient_l1,
             }
         )
 
@@ -251,18 +290,55 @@ def _plot_rollout_degradation(avg_per_step: list[dict[str, float]]) -> Figure:
     mse_d = [s["mse_density"] for s in avg_per_step]
     mse_vx = [s["mse_velx"] for s in avg_per_step]
     mse_vy = [s["mse_vely"] for s in avg_per_step]
+    ssim_d = [s["ssim_density"] for s in avg_per_step]
+    div_norm = [s["divergence_norm"] for s in avg_per_step]
+    grad_l1 = [s["gradient_l1"] for s in avg_per_step]
 
-    fig, ax = plt.subplots(figsize=(6, 4))
-    ax.plot(steps, mse_d, color="blue", linewidth=2, label="Density")
-    ax.plot(steps, mse_vx, color="orange", linewidth=2, label="Vel-X")
-    ax.plot(steps, mse_vy, color="green", linewidth=2, label="Vel-Y")
+    fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(12, 5))
 
-    ax.set_xlabel("Autoregressive Step")
-    ax.set_ylabel("MSE")
-    ax.set_title("Rollout Degradation (20 steps)")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    plt.tight_layout()
+    # Left: MSE + SSIM
+    ax_mse = ax_left
+    ax_mse.plot(steps, mse_d, color="blue", linewidth=2, label="MSE Density")
+    ax_mse.plot(steps, mse_vx, color="orange", linewidth=2, label="MSE Vel-X")
+    ax_mse.plot(steps, mse_vy, color="green", linewidth=2, label="MSE Vel-Y")
+    ax_mse.set_xlabel("Autoregressive Step")
+    ax_mse.set_ylabel("MSE", color="blue")
+    ax_mse.tick_params(axis="y", labelcolor="blue")
+    ax_mse.grid(True, alpha=0.3)
+
+    ax_ssim = ax_mse.twinx()
+    ax_ssim.plot(steps, ssim_d, color="teal", linewidth=2, linestyle="--", label="SSIM Density")
+    ax_ssim.set_ylabel("SSIM", color="teal")
+    ax_ssim.tick_params(axis="y", labelcolor="teal")
+    ax_ssim.set_ylim([0, 1])
+
+    lines1, labels1 = ax_mse.get_legend_handles_labels()
+    lines2, labels2 = ax_ssim.get_legend_handles_labels()
+    ax_mse.legend(lines1 + lines2, labels1 + labels2, loc="best", fontsize=9)
+
+    ax_mse.set_title("MSE per Channel + SSIM")
+
+    # Right: Divergence + Gradient
+    ax_div = ax_right
+    ax_div.plot(steps, div_norm, color="red", linewidth=2, label="Divergence Norm")
+    ax_div.set_xlabel("Autoregressive Step")
+    ax_div.set_ylabel("Divergence Norm", color="red")
+    ax_div.tick_params(axis="y", labelcolor="red")
+    ax_div.grid(True, alpha=0.3)
+
+    ax_grad = ax_div.twinx()
+    ax_grad.plot(steps, grad_l1, color="brown", linewidth=2, linestyle="--", label="Gradient L1")
+    ax_grad.set_ylabel("Gradient L1", color="brown")
+    ax_grad.tick_params(axis="y", labelcolor="brown")
+
+    lines1, labels1 = ax_div.get_legend_handles_labels()
+    lines2, labels2 = ax_grad.get_legend_handles_labels()
+    ax_div.legend(lines1 + lines2, labels1 + labels2, loc="best", fontsize=9)
+
+    ax_div.set_title("Divergence Norm + Gradient L1")
+
+    plt.suptitle("Rollout Degradation (30 steps)", fontsize=13, fontweight="bold")
+    plt.tight_layout(pad=2.0)
 
     return fig
 
@@ -322,7 +398,7 @@ def run_rollout_evaluation(
             starting_frames = _get_starting_frames(T)
 
             for t_start in starting_frames:
-                step_metrics = _run_single_rollout(model, data, t_start, norm_scales, device, config.amp_enabled)
+                step_metrics = _run_single_rollout(model, data, t_start, norm_scales, device, config.amp_enabled, config)
                 for k, m in enumerate(step_metrics):
                     all_rollouts[k].append(m)
                 total_rollouts += 1
@@ -331,30 +407,61 @@ def run_rollout_evaluation(
     avg_per_step: list[dict[str, float]] = []
     for k in range(ROLLOUT_STEPS):
         if not all_rollouts[k]:
-            avg_per_step.append({"mse_density": 0.0, "mse_velx": 0.0, "mse_vely": 0.0})
+            avg_per_step.append(
+                {
+                    "mse_density": 0.0,
+                    "mse_velx": 0.0,
+                    "mse_vely": 0.0,
+                    "ssim_density": 0.0,
+                    "divergence_norm": 0.0,
+                    "divergence_norm_gt": 0.0,
+                    "gradient_l1": 0.0,
+                }
+            )
             continue
         avg = {
             key: sum(r[key] for r in all_rollouts[k]) / len(all_rollouts[k])
-            for key in ["mse_density", "mse_velx", "mse_vely"]
+            for key in [
+                "mse_density",
+                "mse_velx",
+                "mse_vely",
+                "ssim_density",
+                "divergence_norm",
+                "divergence_norm_gt",
+                "gradient_l1",
+            ]
         }
         avg_per_step.append(avg)
 
-    # Log scalar to MLflow
-    mse_at_20 = avg_per_step[-1]["mse_density"]
-    mlflow.log_metric("test_rollout_mse_density_step20", mse_at_20)
+    # Log scalars to MLflow
+    mse_at_30 = avg_per_step[-1]["mse_density"]
+    ssim_at_30 = avg_per_step[-1]["ssim_density"]
+    div_at_30 = avg_per_step[-1]["divergence_norm"]
+    grad_at_30 = avg_per_step[-1]["gradient_l1"]
+    mlflow.log_metric("test_rollout_mse_density_step30", mse_at_30)
+    mlflow.log_metric("test_rollout_ssim_density_step30", ssim_at_30)
+    mlflow.log_metric("test_rollout_divergence_norm_step30", div_at_30)
+    mlflow.log_metric("test_rollout_gradient_l1_step30", grad_at_30)
 
     # Plot and log
     fig = _plot_rollout_degradation(avg_per_step)
-    log_artifact_flat(fig, "rollout_degradation.png", dpi=144)
+    log_artifact_flat(fig, "rollout_degradation.png", dpi=100)
 
     # Console output
     print(f"\nTotal rollouts: {total_rollouts} ({len(test_paths)} sequences x {len(STARTING_POINTS)} starts)")
-    print(f"\n{'Step':<8} {'MSE Density':>15} {'MSE Vel-X':>15} {'MSE Vel-Y':>15}")
-    print("-" * 55)
-    for k in [0, 4, 9, 14, 19]:
+    print(
+        f"\n{'Step':<8} {'MSE Density':>12} {'MSE Vel-X':>12} {'MSE Vel-Y':>12} "
+        f"{'SSIM':>10} {'Div Pred':>12} {'Div GT':>12} {'Grad L1':>12}"
+    )
+    print("-" * 100)
+    for k in [0, 4, 9, 14, 19, 24, 29]:
         if k < len(avg_per_step):
             s = avg_per_step[k]
-            print(f"{k + 1:<8} {s['mse_density']:>15.6f} {s['mse_velx']:>15.6f} {s['mse_vely']:>15.6f}")
-    print("=" * 70)
+            print(
+                f"{k + 1:<8} {s['mse_density']:>12.6f} {s['mse_velx']:>12.6f} {s['mse_vely']:>12.6f} "
+                f"{s['ssim_density']:>10.4f} {s['divergence_norm']:>12.6f} {s['divergence_norm_gt']:>12.6f} "
+                f"{s['gradient_l1']:>12.6f}"
+            )
+    print("=" * 100)
 
     return {"avg_per_step": avg_per_step}

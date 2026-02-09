@@ -22,6 +22,7 @@ from training.metrics import (
     compute_collider_violation,
     compute_divergence_norm,
     compute_emitter_density_accuracy,
+    compute_gradient_l1,
     compute_kinetic_energy,
     compute_per_channel_mse,
     compute_ssim_density,
@@ -104,6 +105,7 @@ class Trainer:
             "val_collider_violation": [],
             "val_emitter_accuracy": [],
             "val_ssim_density": [],
+            "val_gradient_l1": [],
         }
 
         if self.config.physics_loss.enable_divergence:
@@ -291,6 +293,14 @@ class Trainer:
                     )
 
                     batch_metrics["ssim_density"] = compute_ssim_density(outputs, target_for_metrics)
+
+                    batch_metrics["gradient_l1"] = compute_gradient_l1(
+                        density_pred,
+                        target_for_metrics[:, 0, :, :],
+                        dx=self.config.physics_loss.grid_spacing,
+                        dy=self.config.physics_loss.grid_spacing,
+                        padding_mode=self.config.padding_mode,
+                    )
 
                     metrics_tracker.update(batch_metrics)
 
@@ -535,7 +545,7 @@ class Trainer:
 
         epochs = list(range(1, num_epochs + 1))
 
-        fig, axes = plt.subplots(2, 3, figsize=(12, 8))
+        fig, axes = plt.subplots(2, 4, figsize=(16, 8))
         axes = axes.flatten()
 
         axes[0].plot(epochs, self.history["val_mse_density"], label="Density", linewidth=2)
@@ -585,6 +595,14 @@ class Trainer:
         axes[5].legend()
         axes[5].grid(True, alpha=0.3)
 
+        axes[6].plot(epochs, self.history["val_gradient_l1"], color="brown", linewidth=2)
+        axes[6].set_title("Gradient L1 (Edge Sharpness)")
+        axes[6].set_xlabel("Epoch")
+        axes[6].set_ylabel("L1 gradient error")
+        axes[6].grid(True, alpha=0.3)
+
+        axes[7].axis("off")
+
         # Check if log scale needed for MSE
         mse_range = max(self.history["val_mse_density"]) / (min(self.history["val_mse_density"]) + 1e-8)
         if mse_range > 100:
@@ -632,6 +650,7 @@ class Trainer:
             self.history["val_collider_violation"].append(val_losses.get("collider_violation", 0.0))
             self.history["val_emitter_accuracy"].append(val_losses.get("emitter_density_accuracy", 0.0))
             self.history["val_ssim_density"].append(val_losses.get("ssim_density", 0.0))
+            self.history["val_gradient_l1"].append(val_losses.get("gradient_l1", 0.0))
 
             if self.config.physics_loss.enable_divergence:
                 self.history["train_divergence"].append(train_losses.get("divergence", 0.0))

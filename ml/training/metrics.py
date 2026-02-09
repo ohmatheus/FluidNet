@@ -21,6 +21,24 @@ def compute_ssim_density(pred: torch.Tensor, target: torch.Tensor) -> float:
     return result.item()
 
 
+def compute_gradient_l1(
+    density_pred: torch.Tensor, density_target: torch.Tensor, dx: float = 1.0, dy: float = 1.0, padding_mode: str = "zeros"
+) -> float:
+    """
+    L1 loss between predicted and target density gradients.
+    Measures edge preservation quality (lower = sharper, more accurate edges).
+    """
+    from training.physics_loss import compute_spatial_gradients
+
+    grad_pred_x, grad_pred_y = compute_spatial_gradients(density_pred, dx, dy, padding_mode)
+    grad_target_x, grad_target_y = compute_spatial_gradients(density_target, dx, dy, padding_mode)
+
+    l1_x = torch.mean(torch.abs(grad_pred_x - grad_target_x)).item()
+    l1_y = torch.mean(torch.abs(grad_pred_y - grad_target_y)).item()
+
+    return l1_x + l1_y
+
+
 def compute_divergence_norm(
     velx: torch.Tensor, vely: torch.Tensor, dx: float = 1.0, dy: float = 1.0, padding_mode: str = "zeros"
 ) -> float:
