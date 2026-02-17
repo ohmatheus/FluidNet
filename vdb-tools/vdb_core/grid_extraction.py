@@ -55,9 +55,7 @@ def get_bounding_box(grid: Any) -> BoundingBox | None:
         return None
 
 
-def destagger_velocity_to_cell_centers(
-    vel_x_data: np.ndarray, vel_z_data: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
+def destagger_velocity_to_cell_centers(vel_x_data: np.ndarray, vel_z_data: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     # vx is staggered in X (axis 1 of (Z,X) array): average adjacent columns
     padded_vx = np.pad(vel_x_data, ((0, 0), (0, 1)), mode="edge")
     vx_centered = (padded_vx[:, :-1] + padded_vx[:, 1:]) / 2

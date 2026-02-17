@@ -103,9 +103,7 @@ class TestGradientLoss:
         # All emitter and collider (should return zero loss)
         emitter_mask = torch.ones(2, 32, 32)
         collider_mask = torch.ones(2, 32, 32)
-        loss = gradient_loss(
-            density_pred, density_target, emitter_mask, collider_mask, padding_mode="replicate"
-        )
+        loss = gradient_loss(density_pred, density_target, emitter_mask, collider_mask, padding_mode="replicate")
 
         assert torch.isclose(loss, torch.tensor(0.0), atol=1e-6)
 
@@ -132,9 +130,7 @@ class TestGradientLoss:
         collider_mask = torch.zeros(2, 32, 32)
         collider_mask[:, 22:, :] = 1.0
 
-        loss_masked = gradient_loss(
-            density_pred, density_target, emitter_mask, collider_mask, padding_mode="replicate"
-        )
+        loss_masked = gradient_loss(density_pred, density_target, emitter_mask, collider_mask, padding_mode="replicate")
 
         # Should compute loss only on fluid region (rows 10-22)
         # where pred and target are both constant (zero gradients)

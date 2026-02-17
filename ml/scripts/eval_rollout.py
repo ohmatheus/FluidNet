@@ -98,7 +98,9 @@ def run_rollout_to_disk(
             starting_frames = _get_starting_frames(T)
 
             for t_start in starting_frames:
-                step_metrics = _run_single_rollout(model, data, t_start, norm_scales, device, config.amp_enabled, config)
+                step_metrics = _run_single_rollout(
+                    model, data, t_start, norm_scales, device, config.amp_enabled, config
+                )
                 for k, m in enumerate(step_metrics):
                     all_rollouts[k].append(m)
                 total_rollouts += 1
@@ -106,7 +108,15 @@ def run_rollout_to_disk(
             print(f"  {seq_path.stem}: {len(starting_frames)} rollouts")
 
     avg_per_step: list[dict[str, float]] = []
-    metric_keys = ["mse_density", "mse_velx", "mse_vely", "ssim_density", "divergence_norm", "divergence_norm_gt", "gradient_l1"]
+    metric_keys = [
+        "mse_density",
+        "mse_velx",
+        "mse_vely",
+        "ssim_density",
+        "divergence_norm",
+        "divergence_norm_gt",
+        "gradient_l1",
+    ]
     for k in range(ROLLOUT_STEPS):
         if not all_rollouts[k]:
             avg_per_step.append({key: 0.0 for key in metric_keys})

@@ -39,8 +39,12 @@ def compute_gradient_l1(
 
 
 def compute_divergence_norm(
-    velx: torch.Tensor, vely: torch.Tensor, dx: float = 1.0, dy: float = 1.0,
-    padding_mode: str = "zeros", mode: StencilMode = "central",
+    velx: torch.Tensor,
+    vely: torch.Tensor,
+    dx: float = 1.0,
+    dy: float = 1.0,
+    padding_mode: str = "zeros",
+    mode: StencilMode = "central",
 ) -> float:
     div = compute_divergence(velx, vely, dx, dy, padding_mode, mode=mode)
     norm = torch.sqrt(torch.mean(div**2)).item()

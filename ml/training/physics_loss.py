@@ -17,8 +17,11 @@ StencilMode = Literal["central", "forward"]
 
 
 def compute_spatial_gradients(
-    field: torch.Tensor, dx: float = 1.0, dy: float = 1.0,
-    padding_mode: str = "zeros", mode: StencilMode = "central",
+    field: torch.Tensor,
+    dx: float = 1.0,
+    dy: float = 1.0,
+    padding_mode: str = "zeros",
+    mode: StencilMode = "central",
 ) -> tuple[torch.Tensor, torch.Tensor]:
     if field.ndim == 3:
         field = field.unsqueeze(1)
@@ -73,8 +76,12 @@ def _forward_divergence(
 
 
 def compute_divergence(
-    velx: torch.Tensor, vely: torch.Tensor, dx: float = 1.0, dy: float = 1.0,
-    padding_mode: str = "zeros", mode: StencilMode = "central",
+    velx: torch.Tensor,
+    vely: torch.Tensor,
+    dx: float = 1.0,
+    dy: float = 1.0,
+    padding_mode: str = "zeros",
+    mode: StencilMode = "central",
 ) -> torch.Tensor:
     if mode == "forward":
         return _forward_divergence(velx, vely, dx, dy, padding_mode)
@@ -82,7 +89,6 @@ def compute_divergence(
     grad_vx_x, _ = compute_spatial_gradients(velx, dx, dy, padding_mode)
     _, grad_vy_y = compute_spatial_gradients(vely, dx, dy, padding_mode)
     return grad_vx_x + grad_vy_y
-
 
 
 def divergence_loss(
