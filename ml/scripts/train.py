@@ -121,9 +121,11 @@ def train_single_variant(
             group_norm_groups=config.group_norm_groups,
             dropout=config.dropout,
             upsample=config.upsample,
+            downsample=config.downsample,
             padding_mode=config.padding_mode,
             use_residual=config.use_residual,
             bottleneck_blocks=config.bottleneck_blocks,
+            output_activation=config.output_activation,
         )
     ).to(config.device)
 
@@ -178,6 +180,7 @@ def train_single_variant(
                 "physics_loss.enable_gradient": config.physics_loss.enable_gradient,
                 "physics_loss.enable_emitter": config.physics_loss.enable_emitter,
                 "physics_loss.grid_spacing": config.physics_loss.grid_spacing,
+                "physics_loss.stencil_mode": config.physics_loss.stencil_mode,
                 # Gradient clipping
                 "gradient_clip_norm": config.gradient_clip_norm,
                 "gradient_clip_enabled": config.gradient_clip_enabled,
@@ -218,6 +221,7 @@ def train_single_variant(
                 "group_norm_groups": config.group_norm_groups,
                 "dropout": config.dropout,
                 "upsample": config.upsample,
+                "downsample": config.downsample,
                 "padding_mode": config.padding_mode,
                 "use_residual": config.use_residual,
                 "bottleneck_blocks": config.bottleneck_blocks,
