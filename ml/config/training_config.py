@@ -3,7 +3,8 @@ from pathlib import Path
 from pydantic import BaseModel, field_validator
 
 from config.config import PROJECT_ROOT_PATH, project_config
-from models.unet import ActType, NormType, PaddingType, UpsampleType
+from models.unet import ActType, DownsampleType, NormType, OutputActivationType, PaddingType, UpsampleType
+from training.physics_loss import StencilMode
 
 
 class PhysicsLossConfig(BaseModel):
@@ -15,6 +16,7 @@ class PhysicsLossConfig(BaseModel):
     enable_divergence: bool = True
     enable_gradient: bool = False
     enable_emitter: bool = False
+    stencil_mode: StencilMode = "forward"
 
     grid_spacing: float = 2.0 / project_config.simulation.grid_resolution
 
@@ -46,7 +48,7 @@ class TrainingConfig(BaseModel):
     # Dataset settings
     npz_dir: Path = Path(PROJECT_ROOT_PATH / project_config.vdb_tools.npz_output_directory)
     normalize: bool = True
-    split_ratios: tuple[float, float, float] = (0.80, 0.20, 0)  # train, val, test - to change
+    split_ratios: tuple[float, float, float] = (0.70, 0.15, 0.15)
     split_seed: int = 42
     augmentation: AugmentationConfig = AugmentationConfig()
     preload_dataset: bool = True
@@ -61,10 +63,11 @@ class TrainingConfig(BaseModel):
     group_norm_groups: int = 8
     dropout: float = 0.0
     upsample: UpsampleType = "bilinear"  # "nearest", "bilinear", "transpose"
+    downsample: DownsampleType = "stride"  # "stride", "avgpool", "maxpool"
     padding_mode: PaddingType = "replicate"  # "zeros", "reflect", "replicate", "circular"
     use_residual: bool = True
     bottleneck_blocks: int = 1
-    output_activation: bool = True
+    output_activation: OutputActivationType = "linear_clamp"
 
     # MLFlow settings
     mlflow_tracking_uri: str = "./mlruns"  # mlflow server

@@ -55,6 +55,18 @@ def get_bounding_box(grid: Any) -> BoundingBox | None:
         return None
 
 
+def destagger_velocity_to_cell_centers(vel_x_data: np.ndarray, vel_z_data: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    # vx is staggered in X (axis 1 of (Z,X) array): average adjacent columns
+    padded_vx = np.pad(vel_x_data, ((0, 0), (0, 1)), mode="edge")
+    vx_centered = (padded_vx[:, :-1] + padded_vx[:, 1:]) / 2
+
+    # vz is staggered in Z (axis 0 of (Z,X) array): average adjacent rows
+    padded_vz = np.pad(vel_z_data, ((0, 1), (0, 0)), mode="edge")
+    vz_centered = (padded_vz[:-1, :] + padded_vz[1:, :]) / 2
+
+    return vx_centered, vz_centered
+
+
 def extract_density_field_avg(grid: Any, target_resolution: int) -> np.ndarray:
     """
     Extract density field by averaging across Y layers.
@@ -184,6 +196,9 @@ def extract_velocity_components_avg(
         vel_z_data = np.divide(vel_z_sum, weight_sum, out=np.zeros_like(vel_z_sum), where=weight_sum != 0)
 
         print(f"    Valid velocity samples: {valid_samples}")
+
+        # MAC staggered grid → cell-centered: average adjacent face values
+        vel_x_data, vel_z_data = destagger_velocity_to_cell_centers(vel_x_data, vel_z_data)
 
         # Pad to full domain size
         pad_x_before, pad_x_after, pad_z_before, pad_z_after = calculate_padding(

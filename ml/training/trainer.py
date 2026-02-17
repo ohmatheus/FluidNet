@@ -1,7 +1,6 @@
-import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import matplotlib.pyplot as plt
 import mlflow
@@ -23,10 +22,13 @@ from training.metrics import (
     compute_collider_violation,
     compute_divergence_norm,
     compute_emitter_density_accuracy,
+    compute_gradient_l1,
     compute_kinetic_energy,
     compute_per_channel_mse,
+    compute_ssim_density,
 )
-from training.physics_loss import PhysicsAwareLoss
+from training.physics_loss import PhysicsAwareLoss, StencilMode
+from training.test_evaluation import log_artifact_flat
 
 
 class Trainer:
@@ -64,6 +66,7 @@ class Trainer:
             enable_gradient=config.physics_loss.enable_gradient,
             enable_emitter=config.physics_loss.enable_emitter,
             padding_mode=config.padding_mode,
+            stencil_mode=cast("StencilMode", config.physics_loss.stencil_mode),
         )
 
         self.scaler = GradScaler("cuda") if config.amp_enabled and device == "cuda" else None
@@ -102,6 +105,8 @@ class Trainer:
             "val_kinetic_energy": [],
             "val_collider_violation": [],
             "val_emitter_accuracy": [],
+            "val_ssim_density": [],
+            "val_gradient_l1": [],
         }
 
         if self.config.physics_loss.enable_divergence:
@@ -278,6 +283,7 @@ class Trainer:
                         dx=self.config.physics_loss.grid_spacing,
                         dy=self.config.physics_loss.grid_spacing,
                         padding_mode=self.config.padding_mode,
+                        mode=cast("StencilMode", self.config.physics_loss.stencil_mode),
                     )
 
                     batch_metrics["kinetic_energy"] = compute_kinetic_energy(velx_pred, vely_pred)
@@ -286,6 +292,17 @@ class Trainer:
 
                     batch_metrics["emitter_density_accuracy"] = compute_emitter_density_accuracy(
                         density_pred, emitter_mask, expected_injection=0.8
+                    )
+
+                    batch_metrics["ssim_density"] = compute_ssim_density(outputs, target_for_metrics)
+
+                    batch_metrics["gradient_l1"] = compute_gradient_l1(
+                        density_pred,
+                        target_for_metrics[:, 0, :, :],
+                        dx=self.config.physics_loss.grid_spacing,
+                        dy=self.config.physics_loss.grid_spacing,
+                        padding_mode=self.config.padding_mode,
+                        mode=cast("StencilMode", self.config.physics_loss.stencil_mode),
                     )
 
                     metrics_tracker.update(batch_metrics)
@@ -531,7 +548,7 @@ class Trainer:
 
         epochs = list(range(1, num_epochs + 1))
 
-        fig, axes = plt.subplots(2, 3, figsize=(12, 8))
+        fig, axes = plt.subplots(2, 4, figsize=(16, 8))
         axes = axes.flatten()
 
         axes[0].plot(epochs, self.history["val_mse_density"], label="Density", linewidth=2)
@@ -573,11 +590,21 @@ class Trainer:
         axes[4].legend()
         axes[4].grid(True, alpha=0.3)
 
-        axes[5].plot(epochs, self.history["val_total"], color="black", linewidth=2)
-        axes[5].set_title("Total Validation Loss")
+        axes[5].plot(epochs, self.history["val_ssim_density"], color="teal", linewidth=2)
+        axes[5].axhline(y=0.9, color="green", linestyle="--", label="Target > 0.9")
+        axes[5].set_title("SSIM (Density)")
         axes[5].set_xlabel("Epoch")
-        axes[5].set_ylabel("Loss")
+        axes[5].set_ylabel("SSIM")
+        axes[5].legend()
         axes[5].grid(True, alpha=0.3)
+
+        axes[6].plot(epochs, self.history["val_gradient_l1"], color="brown", linewidth=2)
+        axes[6].set_title("Gradient L1 (Edge Sharpness)")
+        axes[6].set_xlabel("Epoch")
+        axes[6].set_ylabel("L1 gradient error")
+        axes[6].grid(True, alpha=0.3)
+
+        axes[7].axis("off")
 
         # Check if log scale needed for MSE
         mse_range = max(self.history["val_mse_density"]) / (min(self.history["val_mse_density"]) + 1e-8)
@@ -625,6 +652,8 @@ class Trainer:
             self.history["val_kinetic_energy"].append(val_losses.get("kinetic_energy", 0.0))
             self.history["val_collider_violation"].append(val_losses.get("collider_violation", 0.0))
             self.history["val_emitter_accuracy"].append(val_losses.get("emitter_density_accuracy", 0.0))
+            self.history["val_ssim_density"].append(val_losses.get("ssim_density", 0.0))
+            self.history["val_gradient_l1"].append(val_losses.get("gradient_l1", 0.0))
 
             if self.config.physics_loss.enable_divergence:
                 self.history["train_divergence"].append(train_losses.get("divergence", 0.0))
@@ -675,58 +704,22 @@ class Trainer:
 
         try:
             fig = self.plot_training_history()
-
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False, mode="wb") as tmp_file:
-                tmp_path = tmp_file.name
-                fig.savefig(tmp_path, dpi=150, bbox_inches="tight")
-
-            mlflow.log_artifact(tmp_path, artifact_path="plots/training_loss_and_lr.png")
-
-            Path(tmp_path).unlink()
-            plt.close(fig)
-
+            log_artifact_flat(fig, "training_loss_and_lr.png", dpi=144)
             print("Training history plot saved to MLflow artifacts")
-
-        except ValueError as e:
-            print(f"Warning: Could not generate training history plot - {e}")
         except Exception as e:
             print(f"Warning: Failed to generate/save training history plot - {e}")
 
         try:
             fig_metrics = self.plot_metrics_grid()
-
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False, mode="wb") as tmp_file:
-                tmp_path = tmp_file.name
-                fig_metrics.savefig(tmp_path, dpi=150, bbox_inches="tight")
-
-            mlflow.log_artifact(tmp_path, artifact_path="plots/validation_metrics_grid.png")
-
-            Path(tmp_path).unlink()
-            plt.close(fig_metrics)
-
+            log_artifact_flat(fig_metrics, "validation_metrics_grid.png", dpi=90)
             print("Metrics grid plot saved to MLflow artifacts")
-
-        except ValueError as e:
-            print(f"Warning: Could not generate metrics grid plot - {e}")
         except Exception as e:
             print(f"Warning: Failed to generate/save metrics grid plot - {e}")
 
         try:
             fig_loss_components = self.plot_loss_components()
-
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False, mode="wb") as tmp_file:
-                tmp_path = tmp_file.name
-                fig_loss_components.savefig(tmp_path, dpi=150, bbox_inches="tight")
-
-            mlflow.log_artifact(tmp_path, artifact_path="plots/loss_components.png")
-
-            Path(tmp_path).unlink()
-            plt.close(fig_loss_components)
-
+            log_artifact_flat(fig_loss_components, "loss_components.png", dpi=90)
             print("Loss components plot saved to MLflow artifacts")
-
-        except ValueError as e:
-            print(f"Warning: Could not generate loss components plot - {e}")
         except Exception as e:
             print(f"Warning: Failed to generate/save loss components plot - {e}")
 

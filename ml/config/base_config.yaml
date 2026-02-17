@@ -6,7 +6,7 @@ num_workers: 4
 
 # Dataset
 normalize: true
-split_ratios: [0.80, 0.20, 0.0]
+split_ratios: [0.70, 0.15, 0.15]
 split_seed: 42
 preload_dataset: true
 
@@ -22,7 +22,7 @@ gradient_clip_enabled: true
 
 # MLflow
 mlflow_tracking_uri: ./mlruns
-mlflow_experiment_name: fluid_hierarchical_v1
+mlflow_experiment_name: fluid_hierarchical_v1.1
 
 # === OVERRIDABLE PARAMS ===
 
@@ -30,8 +30,8 @@ mlflow_experiment_name: fluid_hierarchical_v1
 epochs: 200
 
 # Checkpoints
-save_every_n_epochs: 5
-keep_last_n_checkpoints: 20
+save_every_n_epochs: 9999
+keep_last_n_checkpoints: 0
 
 # Learning rate
 learning_rate: 0.0007
@@ -45,6 +45,7 @@ physics_loss:
   enable_divergence: true
   enable_gradient: true
   enable_emitter: true
+  stencil_mode: forward  # "central" or "forward"
 
 # Rollout config
 # NOTE: rollout_step is FIXED per variant (K1_A=1, K2_A=2, K3_A=3, etc.)
@@ -70,5 +71,5 @@ early_stop_patience: 10
 early_stop_min_delta: 0.0
 
 # Auto-inference (call simple-infer for quick autoregressive simulation)
-auto_inference_enabled: true
+auto_inference_enabled: false
 auto_inference_num_frames: 600

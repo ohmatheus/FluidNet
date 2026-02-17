@@ -9,7 +9,9 @@ import torch.nn as nn
 NormType = Literal["none", "batch", "instance", "group"]
 ActType = Literal["relu", "leaky_relu", "gelu", "silu"]
 UpsampleType = Literal["nearest", "bilinear", "transpose"]
+DownsampleType = Literal["stride", "avgpool", "maxpool"]
 PaddingType = Literal["zeros", "reflect", "replicate", "circular"]
+OutputActivationType = Literal["sigmoid_tanh", "linear_clamp"]
 
 
 def _norm(norm: NormType, ch: int, groups: int) -> nn.Module:
@@ -85,6 +87,13 @@ class ResBlock(nn.Module):
         return cast("torch.Tensor", x + self.b(x))
 
 
+def _downsample(mode: DownsampleType, ch: int, padding_mode: PaddingType) -> nn.Module:
+    if mode == "stride":
+        return nn.Conv2d(ch, ch, 3, stride=2, padding=1, padding_mode=padding_mode)
+    pool = nn.AvgPool2d(2) if mode == "avgpool" else nn.MaxPool2d(2)
+    return nn.Sequential(pool, nn.Conv2d(ch, ch, 3, padding=1, padding_mode=padding_mode))
+
+
 class Down(nn.Module):
     def __init__(
         self,
@@ -96,6 +105,7 @@ class Down(nn.Module):
         groups: int,
         dropout: float,
         use_residual: bool,
+        downsample: DownsampleType = "stride",
         padding_mode: PaddingType = "zeros",
     ) -> None:
         super().__init__()
@@ -107,7 +117,7 @@ class Down(nn.Module):
             if use_residual
             else nn.Identity()
         )
-        self.down = nn.Conv2d(out_ch, out_ch, 3, stride=2, padding=1, padding_mode=padding_mode)
+        self.down = _downsample(downsample, out_ch, padding_mode)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         x = self.block(x)
@@ -184,10 +194,11 @@ class UNetConfig:
     dropout: float = 0.0
 
     upsample: UpsampleType = "nearest"
+    downsample: DownsampleType = "stride"
     padding_mode: PaddingType = "zeros"
     use_residual: bool = False
     bottleneck_blocks: int = 1
-    output_activation: bool = True
+    output_activation: OutputActivationType = "linear_clamp"
 
 
 class UNet(nn.Module):
@@ -222,6 +233,7 @@ class UNet(nn.Module):
                     groups=self.cfg.group_norm_groups,
                     dropout=self.cfg.dropout,
                     use_residual=self.cfg.use_residual,
+                    downsample=self.cfg.downsample,
                     padding_mode=self.cfg.padding_mode,
                 )
             )
@@ -281,12 +293,14 @@ class UNet(nn.Module):
 
         x = self.head(x)
 
-        if self.cfg.output_activation:
+        if self.cfg.output_activation == "sigmoid_tanh":
             density = torch.sigmoid(x[:, 0:1, :, :])
             velocity = torch.tanh(x[:, 1:3, :, :])
-            return torch.cat([density, velocity], dim=1)
+        else:
+            density = torch.clamp(x[:, 0:1, :, :], 0.0, 1.0)
+            velocity = torch.clamp(x[:, 1:3, :, :], -1.0, 1.0)
 
-        return cast("torch.Tensor", x)
+        return torch.cat([density, velocity], dim=1)
 
 
-__all__ = ["UNet", "UNetConfig", "PaddingType"]
+__all__ = ["UNet", "UNetConfig", "DownsampleType", "OutputActivationType", "PaddingType"]
