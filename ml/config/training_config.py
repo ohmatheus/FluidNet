@@ -100,6 +100,7 @@ class TrainingConfig(BaseModel):
 
     # Multi-step rollout training
     rollout_step: int = 0
+    rollout_stride: float = 1.0  # fraction of K used as stride (0.0–1.0], 1.0 = stride equals K
     rollout_weight_decay: float = 1.10  # not used if rollout_final_step_only is True
     #    ∂total_loss/∂θ =
     #    w₀/sum × ∂loss₀/∂θ                     [direct from step 0]
@@ -118,6 +119,13 @@ class TrainingConfig(BaseModel):
     def validate_rollout_step(cls, v: int) -> int:
         if v < 0:
             raise ValueError(f"rollout_step must be >= 0, got {v}")
+        return v
+
+    @field_validator("rollout_stride")
+    @classmethod
+    def validate_rollout_stride(cls, v: float) -> float:
+        if v <= 0.0 or v > 1.0:
+            raise ValueError(f"rollout_stride must be in (0.0, 1.0], got {v}")
         return v
 
     @property

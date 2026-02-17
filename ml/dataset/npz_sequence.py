@@ -52,27 +52,27 @@ def _load_sequence_metadata(path: Path) -> tuple[int, int, int]:
         return T, H, W
 
 
-def _build_real_sequence_indices(
-    seq_paths: list[Path], rollout_steps: int = 1
-) -> tuple[list[tuple[int, int]], list[int], int, int]:
-    indices: list[tuple[int, int]] = []
+def _load_sequence_dimensions(
+    seq_paths: list[Path],
+) -> tuple[list[int], int, int]:
     frame_counts: list[int] = []
     h, w = 0, 0
-
     for si, path in enumerate(seq_paths):
         T, H, W = _load_sequence_metadata(path)
-
-        # Store dimensions from first sequence
         if si == 0:
             h, w = H, W
-
         frame_counts.append(T)
+    return frame_counts, h, w
 
-        # ! Ensure t+rollout_steps is valid
-        for t in range(1, T - rollout_steps):
+
+def _build_indices_for_offset(
+    frame_counts: list[int], rollout_steps: int, stride: int, offset: int = 0
+) -> list[tuple[int, int]]:
+    indices: list[tuple[int, int]] = []
+    for si, T in enumerate(frame_counts):
+        for t in range(1 + offset, T - rollout_steps, stride):
             indices.append((si, t))
-
-    return indices, frame_counts, h, w
+    return indices
 
 
 def _build_fake_sequence_indices(
@@ -231,6 +231,7 @@ class FluidNPZSequenceDataset(Dataset):
         augmentation_config: dict | None = None,
         preload: bool = False,
         rollout_steps: int = 1,
+        stride: int = 1,
     ) -> None:
         self.npz_dir = npz_dir
         self.normalize = normalize
@@ -263,7 +264,14 @@ class FluidNPZSequenceDataset(Dataset):
             stats_path = PROJECT_ROOT_PATH / project_config.vdb_tools.stats_output_file
             self._norm_scales = load_normalization_scales(stats_path)
 
-        self._index, frame_counts, h, w = _build_real_sequence_indices(self.seq_paths, rollout_steps=rollout_steps)
+        frame_counts, h, w = _load_sequence_dimensions(self.seq_paths)
+
+        self._indices_by_offset: list[list[tuple[int, int]]] = []
+        for offset in range(stride):
+            indices = _build_indices_for_offset(frame_counts, rollout_steps, stride, offset)
+            self._indices_by_offset.append(indices)
+
+        self._index = self._indices_by_offset[0]
 
         if not self._index:
             raise RuntimeError("No valid samples found (need T>=3 per sequence)")
@@ -273,6 +281,10 @@ class FluidNPZSequenceDataset(Dataset):
 
         if self.preload:
             self._preload_sequences()
+
+    def set_epoch(self, epoch: int) -> None:
+        offset = epoch % len(self._indices_by_offset)
+        self._index = self._indices_by_offset[offset]
 
     def _estimate_memory_usage(self, seq_paths: list[Path]) -> tuple[int, str]:
         total_bytes = 0

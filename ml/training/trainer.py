@@ -627,6 +627,8 @@ class Trainer:
         for epoch in range(self.config.epochs):
             epoch_start = time.time()
 
+            self.train_loader.dataset.set_epoch(epoch)
+
             train_losses = self.train_epoch()
             val_losses = self.validate()
 

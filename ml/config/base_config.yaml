@@ -51,6 +51,7 @@ physics_loss:
 # NOTE: rollout_step is FIXED per variant (K1_A=1, K2_A=2, K3_A=3, etc.)
 # No rollout_schedule needed - each K variant trains at fixed K
 rollout_step: 0
+rollout_stride: 1
 rollout_weight_decay: 1.10
 rollout_gradient_truncation: false
 validation_use_rollout_k: true
