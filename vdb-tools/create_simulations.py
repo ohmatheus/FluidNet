@@ -15,7 +15,7 @@ BLENDER_SCRIPT = Path(__file__).parent / "blender_scripts/create_random_simulati
 
 # todo move all of that to yaml config file
 # and add explanation for each parameters
-NO_EMITTER_PCT = 0.15
+NO_EMITTER_PCT = 0.05
 NO_COLLIDER_PCT = 0.50
 
 COLLIDER_MODE_SIMPLE_THRESHOLD = 0.20
