@@ -84,6 +84,8 @@ def train_single_variant(
         "flip_probability": config.augmentation.flip_probability,
     }
 
+    train_stride = max(1, round(config.rollout_stride * config.rollout_step))
+
     train_ds = FluidNPZSequenceDataset(
         npz_dir=npz_dir,
         normalize=config.normalize,
@@ -92,6 +94,7 @@ def train_single_variant(
         augmentation_config=aug_config_dict,
         preload=config.preload_dataset,
         rollout_steps=config.rollout_step,
+        stride=train_stride,
     )
 
     val_rollout_steps = config.rollout_step if config.validation_use_rollout_k else 1
@@ -207,6 +210,8 @@ def train_single_variant(
                 "augmentation.flip_axis": config.augmentation.flip_axis,
                 # Multi-step rollout training
                 "rollout_step": config.rollout_step,
+                "rollout_stride": config.rollout_stride,
+                "train_stride": train_stride,
                 "rollout_weight_decay": config.rollout_weight_decay,
                 "rollout_gradient_truncation": config.rollout_gradient_truncation,
                 "validation_use_rollout_k": config.validation_use_rollout_k,
