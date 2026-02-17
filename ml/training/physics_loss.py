@@ -7,39 +7,38 @@ physics-based constraints:
 3. Mass loss: Ignored. Assume the total fluid as equal mass at each frame, which is not our case since we have emission.
 """
 
+from typing import Literal
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+StencilMode = Literal["central", "forward"]
+
 
 def compute_spatial_gradients(
-    field: torch.Tensor, dx: float = 1.0, dy: float = 1.0, padding_mode: str = "zeros"
+    field: torch.Tensor, dx: float = 1.0, dy: float = 1.0,
+    padding_mode: str = "zeros", mode: StencilMode = "central",
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """
-    Compute spatial gradients using central differences.
-    """
     if field.ndim == 3:
-        field = field.unsqueeze(1)  # (B,H,W) -> (B,1,H,W)
+        field = field.unsqueeze(1)
         squeeze = True
     else:
         squeeze = False
 
-    # ∂f/∂x ~= (f[i+1] - f[i-1]) / (2*dx)
-    # Pad: left=1, right=1, top=1, bottom=1
-    # Original shape: (B, C, H, W)
-    # Padded shape: (B, C, H+2, W+2)
-    # Note: F.pad uses "constant" for zeros, "replicate" for replicate, etc.
     pad_mode = "constant" if padding_mode == "zeros" else padding_mode
-    field_padded = F.pad(field, (1, 1, 1, 1), mode=pad_mode, value=0.0 if pad_mode == "constant" else None)
+    pad_val = 0.0 if pad_mode == "constant" else None
 
-    # X gradient (horizontal) - differences along width (last) dimension
-    # Take slices [2:] and [:-2] which gives us (B, C, H+2, W)
-    # But we want (B, C, H, W), so we need to also slice the height
-    grad_x = (field_padded[:, :, 1:-1, 2:] - field_padded[:, :, 1:-1, :-2]) / (2.0 * dx)
-
-    # differences along height dimension
-    # (B, C, H, W+2)
-    grad_y = (field_padded[:, :, 2:, 1:-1] - field_padded[:, :, :-2, 1:-1]) / (2.0 * dy)
+    if mode == "forward":
+        # ∂f/∂x ~= (f[i+1] - f[i]) / dx
+        padded = F.pad(field, (0, 1, 0, 1), mode=pad_mode, value=pad_val)
+        grad_x = (padded[:, :, :-1, 1:] - padded[:, :, :-1, :-1]) / dx
+        grad_y = (padded[:, :, 1:, :-1] - padded[:, :, :-1, :-1]) / dy
+    else:
+        # ∂f/∂x ~= (f[i+1] - f[i-1]) / (2*dx)
+        padded = F.pad(field, (1, 1, 1, 1), mode=pad_mode, value=pad_val)
+        grad_x = (padded[:, :, 1:-1, 2:] - padded[:, :, 1:-1, :-2]) / (2.0 * dx)
+        grad_y = (padded[:, :, 2:, 1:-1] - padded[:, :, :-2, 1:-1]) / (2.0 * dy)
 
     if squeeze:
         grad_x = grad_x.squeeze(1)
@@ -48,15 +47,42 @@ def compute_spatial_gradients(
     return grad_x, grad_y
 
 
-def compute_divergence(
-    velx: torch.Tensor, vely: torch.Tensor, dx: float = 1.0, dy: float = 1.0, padding_mode: str = "zeros"
+def _forward_divergence(
+    velx: torch.Tensor, vely: torch.Tensor, dx: float, dy: float, padding_mode: str
 ) -> torch.Tensor:
+    if velx.ndim == 3:
+        velx = velx.unsqueeze(1)
+        vely = vely.unsqueeze(1)
+        squeeze = True
+    else:
+        squeeze = False
+
+    pad_mode = "constant" if padding_mode == "zeros" else padding_mode
+    pad_val = 0.0 if pad_mode == "constant" else None
+
+    vx_padded = F.pad(velx, (0, 1, 0, 0), mode=pad_mode, value=pad_val)
+    dvx_dx = (vx_padded[:, :, :, 1:] - vx_padded[:, :, :, :-1]) / dx
+
+    vy_padded = F.pad(vely, (0, 0, 0, 1), mode=pad_mode, value=pad_val)
+    dvy_dy = (vy_padded[:, :, 1:, :] - vy_padded[:, :, :-1, :]) / dy
+
+    div = dvx_dx + dvy_dy
+    if squeeze:
+        div = div.squeeze(1)
+    return div
+
+
+def compute_divergence(
+    velx: torch.Tensor, vely: torch.Tensor, dx: float = 1.0, dy: float = 1.0,
+    padding_mode: str = "zeros", mode: StencilMode = "central",
+) -> torch.Tensor:
+    if mode == "forward":
+        return _forward_divergence(velx, vely, dx, dy, padding_mode)
+
     grad_vx_x, _ = compute_spatial_gradients(velx, dx, dy, padding_mode)
     _, grad_vy_y = compute_spatial_gradients(vely, dx, dy, padding_mode)
-
-    assert grad_vx_x.shape == grad_vy_y.shape, f"Shape mismatch: {grad_vx_x.shape} vs {grad_vy_y.shape}"
-
     return grad_vx_x + grad_vy_y
+
 
 
 def divergence_loss(
@@ -68,13 +94,14 @@ def divergence_loss(
     dy: float = 1.0,
     eps: float = 1e-8,
     padding_mode: str = "zeros",
+    stencil_mode: StencilMode = "central",
 ) -> torch.Tensor:
     """
     Divergence-free constraint: ∇·v ≈ 0 in fluid regions.
 
     Excludes emitter regions (where mass is injected) and collider regions.
     """
-    div = compute_divergence(velx, vely, dx, dy, padding_mode)
+    div = compute_divergence(velx, vely, dx, dy, padding_mode, mode=stencil_mode)
 
     # Create fluid region mask
     fluid_mask = (emitter_mask == 0.0).float()
@@ -96,15 +123,39 @@ def divergence_loss(
 def gradient_loss(
     density_pred: torch.Tensor,
     density_target: torch.Tensor,
+    emitter_mask: torch.Tensor | None = None,
+    collider_mask: torch.Tensor | None = None,
     dx: float = 1.0,
     dy: float = 1.0,
+    eps: float = 1e-8,
     padding_mode: str = "zeros",
+    mode: StencilMode = "central",
 ) -> torch.Tensor:
-    grad_pred_x, grad_pred_y = compute_spatial_gradients(density_pred, dx, dy, padding_mode)
-    grad_target_x, grad_target_y = compute_spatial_gradients(density_target, dx, dy, padding_mode)
+    """
+    Gradient preservation constraint: preserves sharp density features in fluid regions.
 
-    loss_x = F.l1_loss(grad_pred_x, grad_target_x)
-    loss_y = F.l1_loss(grad_pred_y, grad_target_y)
+    Excludes emitter regions (where mass is injected) and collider regions.
+    """
+    grad_pred_x, grad_pred_y = compute_spatial_gradients(density_pred, dx, dy, padding_mode, mode=mode)
+    grad_target_x, grad_target_y = compute_spatial_gradients(density_target, dx, dy, padding_mode, mode=mode)
+
+    if emitter_mask is not None:
+        fluid_mask = (emitter_mask == 0.0).float()
+        if collider_mask is not None:
+            fluid_mask = fluid_mask * (collider_mask == 0.0).float()
+
+        num_fluid_cells = fluid_mask.sum()
+        if num_fluid_cells < eps:
+            return torch.tensor(0.0, device=density_pred.device, dtype=density_pred.dtype)
+
+        diff_x = torch.abs(grad_pred_x - grad_target_x) * fluid_mask
+        diff_y = torch.abs(grad_pred_y - grad_target_y) * fluid_mask
+
+        loss_x = diff_x.sum() / (num_fluid_cells + eps)
+        loss_y = diff_y.sum() / (num_fluid_cells + eps)
+    else:
+        loss_x = F.l1_loss(grad_pred_x, grad_target_x)
+        loss_y = F.l1_loss(grad_pred_y, grad_target_y)
 
     return loss_x + loss_y
 
@@ -132,6 +183,7 @@ class PhysicsAwareLoss(nn.Module):
         enable_gradient: bool = True,
         enable_emitter: bool = True,
         padding_mode: str = "zeros",
+        stencil_mode: StencilMode = "forward",
     ) -> None:
         super().__init__()
 
@@ -141,6 +193,7 @@ class PhysicsAwareLoss(nn.Module):
         self.emitter_weight = emitter_weight
         self.grid_spacing = grid_spacing
         self.padding_mode = padding_mode
+        self.stencil_mode: StencilMode = stencil_mode
 
         self.enable_divergence = enable_divergence
         self.enable_gradient = enable_gradient
@@ -179,6 +232,7 @@ class PhysicsAwareLoss(nn.Module):
                 dx=self.grid_spacing,
                 dy=self.grid_spacing,
                 padding_mode=self.padding_mode,
+                stencil_mode=self.stencil_mode,
             )
             loss_dict["divergence"] = loss_div.item()
 
@@ -187,9 +241,12 @@ class PhysicsAwareLoss(nn.Module):
             loss_grad = gradient_loss(
                 density_pred,
                 density_target,
+                emitter_mask=emitter_mask,
+                collider_mask=collider_mask,
                 dx=self.grid_spacing,
                 dy=self.grid_spacing,
                 padding_mode=self.padding_mode,
+                mode=self.stencil_mode,
             )
             loss_dict["gradient"] = loss_grad.item()
 

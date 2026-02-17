@@ -17,7 +17,7 @@ def compute_masked_divergence_rmse(
 ) -> float:
     vx = torch.from_numpy(velx).unsqueeze(0)  # (1, H, W)
     vz = torch.from_numpy(velz).unsqueeze(0)
-    div = compute_divergence(vx, vz)  # (1, H, W)
+    div = compute_divergence(vx, vz, mode="central")  # (1, H, W)
 
     fluid_mask = (torch.from_numpy(emitter) < 0.01) & (torch.from_numpy(collider) < 0.01)
     fluid_mask = fluid_mask.float()
@@ -63,15 +63,22 @@ def main() -> None:
     avg_divs_arr = np.array(seq_avg_divs)
     print(f"\nOverall: mean={avg_divs_arr.mean():.6f}, min={avg_divs_arr.min():.6f}, max={avg_divs_arr.max():.6f}")
 
-    fig, ax = plt.subplots(figsize=(max(8, len(seq_names) * 0.4), 5))
-    ax.bar(range(len(seq_names)), avg_divs_arr, color="steelblue")
-    ax.axhline(y=0.1, color="red", linestyle="--", label="threshold (0.1)")
-    ax.set_xlabel("Sequence")
-    ax.set_ylabel("Avg Divergence RMSE (fluid-only)")
-    ax.set_title("Ground Truth Divergence per Sequence")
-    ax.set_xticks(range(len(seq_names)))
-    ax.set_xticklabels(seq_names, rotation=45, ha="right", fontsize=7)
-    ax.legend()
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    ax.hist(avg_divs_arr, bins=20, color="steelblue", edgecolor="white", alpha=0.9)
+
+    mean_val = avg_divs_arr.mean()
+    std_val = avg_divs_arr.std()
+    ax.axvline(mean_val, color="#ff6b35", linewidth=2.5, linestyle="-", label=f"Mean: {mean_val:.4f}")
+    ax.axvline(mean_val + std_val, color="#ff6b35", linewidth=1.5, linestyle="--", label=f"Std: ±{std_val:.4f}")
+    ax.axvline(mean_val - std_val, color="#ff6b35", linewidth=1.5, linestyle="--")
+
+    ax.axvline(0, color="limegreen", linewidth=2, linestyle="-", label="Expected (divergence-free): 0")
+
+    ax.set_xlabel("Avg Divergence RMSE per Sequence", fontsize=14)
+    ax.set_ylabel("Count", fontsize=14)
+    ax.set_title("Ground Truth Divergence Distribution", fontsize=16)
+    ax.legend(fontsize=12)
     plt.tight_layout()
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

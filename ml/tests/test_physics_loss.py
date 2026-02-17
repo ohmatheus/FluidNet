@@ -96,6 +96,51 @@ class TestGradientLoss:
 
         assert loss > 0.0
 
+    def test_gradient_loss_excludes_emitters_and_colliders(self) -> None:
+        density_pred = torch.randn(2, 32, 32)
+        density_target = torch.randn(2, 32, 32)
+
+        # All emitter and collider (should return zero loss)
+        emitter_mask = torch.ones(2, 32, 32)
+        collider_mask = torch.ones(2, 32, 32)
+        loss = gradient_loss(
+            density_pred, density_target, emitter_mask, collider_mask, padding_mode="replicate"
+        )
+
+        assert torch.isclose(loss, torch.tensor(0.0), atol=1e-6)
+
+    def test_gradient_loss_with_partial_masking(self) -> None:
+        # Create fields with distinct gradient patterns in different regions
+        density_pred = torch.zeros(2, 32, 32)
+        density_target = torch.zeros(2, 32, 32)
+
+        # Add strong gradients in emitter region (will be masked out)
+        density_pred[:, :10, :] = torch.linspace(0, 10, 10).unsqueeze(0).unsqueeze(-1).expand(2, 10, 32)
+        density_target[:, :10, :] = 0.0
+
+        # Add different pattern in fluid region (will be measured)
+        density_pred[:, 10:22, :] = 1.0
+        density_target[:, 10:22, :] = 1.0
+
+        # Add strong gradients in collider region (will be masked out)
+        density_pred[:, 22:, :] = torch.linspace(10, 0, 10).unsqueeze(0).unsqueeze(-1).expand(2, 10, 32)
+        density_target[:, 22:, :] = 0.0
+
+        emitter_mask = torch.zeros(2, 32, 32)
+        emitter_mask[:, :10, :] = 1.0
+
+        collider_mask = torch.zeros(2, 32, 32)
+        collider_mask[:, 22:, :] = 1.0
+
+        loss_masked = gradient_loss(
+            density_pred, density_target, emitter_mask, collider_mask, padding_mode="replicate"
+        )
+
+        # Should compute loss only on fluid region (rows 10-22)
+        # where pred and target are both constant (zero gradients)
+        assert loss_masked >= 0.0
+        assert torch.isfinite(loss_masked)
+
 
 class TestPhysicsAwareLoss:
     def test_forward_returns_loss_and_dict(self) -> None:

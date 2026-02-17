@@ -1,6 +1,7 @@
 import shutil
 import tempfile
 from pathlib import Path
+from typing import cast
 
 import matplotlib.pyplot as plt
 import mlflow
@@ -16,6 +17,7 @@ from config.config import PROJECT_ROOT_PATH, project_config
 from config.training_config import TrainingConfig
 from dataset.normalization import load_normalization_scales
 from dataset.npz_sequence import FluidNPZSequenceDataset
+from training.physics_loss import StencilMode
 from training.metrics import (
     MetricsTracker,
     compute_collider_violation,
@@ -48,6 +50,7 @@ def _compute_batch_metrics(
         dx=config.physics_loss.grid_spacing,
         dy=config.physics_loss.grid_spacing,
         padding_mode=config.padding_mode,
+        mode=cast(StencilMode, config.physics_loss.stencil_mode),
     )
     metrics["kinetic_energy"] = compute_kinetic_energy(velx_pred, vely_pred)
     metrics["collider_violation"] = compute_collider_violation(density_pred, collider_mask)
@@ -61,6 +64,7 @@ def _compute_batch_metrics(
         dx=config.physics_loss.grid_spacing,
         dy=config.physics_loss.grid_spacing,
         padding_mode=config.padding_mode,
+        mode=cast(StencilMode, config.physics_loss.stencil_mode),
     )
 
     return metrics
@@ -248,6 +252,7 @@ def _run_single_rollout(
             dx=config.physics_loss.grid_spacing,
             dy=config.physics_loss.grid_spacing,
             padding_mode=config.padding_mode,
+            mode=cast(StencilMode, config.physics_loss.stencil_mode),
         )
 
         divergence_norm_gt = compute_divergence_norm(
@@ -256,6 +261,7 @@ def _run_single_rollout(
             dx=config.physics_loss.grid_spacing,
             dy=config.physics_loss.grid_spacing,
             padding_mode=config.padding_mode,
+            mode=cast(StencilMode, config.physics_loss.stencil_mode),
         )
 
         gradient_l1 = compute_gradient_l1(
@@ -264,6 +270,7 @@ def _run_single_rollout(
             dx=config.physics_loss.grid_spacing,
             dy=config.physics_loss.grid_spacing,
             padding_mode=config.padding_mode,
+            mode=cast(StencilMode, config.physics_loss.stencil_mode),
         )
 
         step_metrics.append(
