@@ -109,9 +109,11 @@ def load_model_from_checkpoint(checkpoint_path: Path, device: str) -> UNet:
     group_norm_groups = config.get("group_norm_groups", 8)
     dropout = config.get("dropout", 0.0)
     upsample = config.get("upsample", "nearest")
+    downsample = config.get("downsample", "stride")
     padding_mode = config.get("padding_mode", "zeros")
     use_residual = config.get("use_residual", True)
     bottleneck_blocks = config.get("bottleneck_blocks", 1)
+    output_activation = config.get("output_activation", "linear_clamp")
 
     model = UNet(
         cfg=UNetConfig(
@@ -124,9 +126,11 @@ def load_model_from_checkpoint(checkpoint_path: Path, device: str) -> UNet:
             group_norm_groups=group_norm_groups,
             dropout=dropout,
             upsample=upsample,
+            downsample=downsample,
             padding_mode=padding_mode,
             use_residual=use_residual,
             bottleneck_blocks=bottleneck_blocks,
+            output_activation=output_activation,
         )
     )
 
