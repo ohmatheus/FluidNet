@@ -3,11 +3,12 @@ out_channels: 3
 base_channels: 16
 depth: 2
 norm: batch
-act: relu
+act: gelu
 group_norm_groups: 8
 dropout: 0.0
 upsample: nearest
+downsample: avgpool  # "stride", "avgpool", "maxpool"
 padding_mode: zeros  # "zeros", "reflect", "replicate", "circular"
 use_residual: true
 bottleneck_blocks: 1
-output_activation: true
+output_activation: linear_clamp

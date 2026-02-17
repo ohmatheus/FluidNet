@@ -30,8 +30,8 @@ mlflow_experiment_name: fluid_hierarchical_v1.1
 epochs: 200
 
 # Checkpoints
-save_every_n_epochs: 5
-keep_last_n_checkpoints: 3
+save_every_n_epochs: 9999
+keep_last_n_checkpoints: 0
 
 # Learning rate
 learning_rate: 0.0007
@@ -45,6 +45,7 @@ physics_loss:
   enable_divergence: true
   enable_gradient: true
   enable_emitter: true
+  stencil_mode: forward  # "central" or "forward"
 
 # Rollout config
 # NOTE: rollout_step is FIXED per variant (K1_A=1, K2_A=2, K3_A=3, etc.)

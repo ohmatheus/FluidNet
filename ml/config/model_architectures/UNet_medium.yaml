@@ -5,9 +5,10 @@ depth: 3
 norm: instance
 act: gelu
 group_norm_groups: 8
-dropout: 0.0
+dropout: 0.1
 upsample: bilinear
+downsample: stride  # "stride", "avgpool", "maxpool"
 padding_mode: replicate  # "zeros", "reflect", "replicate", "circular"
 use_residual: true
 bottleneck_blocks: 1
-output_activation: true
+output_activation: linear_clamp
