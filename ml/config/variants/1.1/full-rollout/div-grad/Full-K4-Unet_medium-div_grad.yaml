@@ -1,0 +1,9 @@
+rollout_step: 4
+variant_name: Full-K4-Unet_medium-div_grad
+parent_variant: Full-K3-Unet_medium-div_grad
+
+
+learning_rate: 0.0003
+epochs: 10
+lr_scheduler_patience: 4
+early_stop_patience: 10

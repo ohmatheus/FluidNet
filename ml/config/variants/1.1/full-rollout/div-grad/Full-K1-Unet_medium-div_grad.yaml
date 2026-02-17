@@ -1,18 +1,17 @@
 rollout_step: 1
-variant_name: simple-Unet_medium-div_grad
+variant_name: Full-K1-Unet_medium-div_grad
 parent_variant: null
 model_architecture: UNet_medium
 
 learning_rate: 0.001
-epochs: 100
-lr_scheduler_patience: 2
-early_stop_patience: 5
+epochs: 5
+lr_scheduler_patience: 200
+early_stop_patience: 200
 
 physics_loss:
   mse_weight: 1.0
-  gradient_weight: 0.02
   divergence_weight: 0.01
+  gradient_weight: 0.001
   enable_divergence: true
   enable_gradient: true
   enable_emitter: false
-

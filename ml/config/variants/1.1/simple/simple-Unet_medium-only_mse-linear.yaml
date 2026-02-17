@@ -1,5 +1,5 @@
 rollout_step: 1
-variant_name: simple-Unet_medium-only_mse
+variant_name: simple-Unet_medium-only_mse-linear
 parent_variant: null
 model_architecture: UNet_medium
 

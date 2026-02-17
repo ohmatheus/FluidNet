@@ -1,6 +1,6 @@
 rollout_step: 3
-variant_name: Full-K3-Unet_medium-only_div
-parent_variant: Full-K2-Unet_medium-only_div
+variant_name: Full-K3-Unet_medium-div_grad
+parent_variant: Full-K2-Unet_medium-div_grad
 
 
 learning_rate: 0.0003
