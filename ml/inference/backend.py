@@ -50,8 +50,10 @@ class PyTorchBackend(InferenceBackend):
         group_norm_groups = config.get("group_norm_groups", 8)
         dropout = config.get("dropout", 0.0)
         upsample = config.get("upsample", "nearest")
+        downsample = config.get("downsample", "stride")
         use_residual = config.get("use_residual", True)
         bottleneck_blocks = config.get("bottleneck_blocks", 1)
+        output_activation = config.get("output_activation", "linear_clamp")
 
         self._model = UNet(
             cfg=UNetConfig(
@@ -64,8 +66,10 @@ class PyTorchBackend(InferenceBackend):
                 group_norm_groups=group_norm_groups,
                 dropout=dropout,
                 upsample=upsample,
+                downsample=downsample,
                 use_residual=use_residual,
                 bottleneck_blocks=bottleneck_blocks,
+                output_activation=output_activation,
             )
         )
 

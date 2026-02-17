@@ -1,6 +1,6 @@
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import matplotlib.pyplot as plt
 import mlflow
@@ -27,7 +27,7 @@ from training.metrics import (
     compute_per_channel_mse,
     compute_ssim_density,
 )
-from training.physics_loss import PhysicsAwareLoss
+from training.physics_loss import StencilMode, PhysicsAwareLoss
 from training.test_evaluation import log_artifact_flat
 
 
@@ -66,6 +66,7 @@ class Trainer:
             enable_gradient=config.physics_loss.enable_gradient,
             enable_emitter=config.physics_loss.enable_emitter,
             padding_mode=config.padding_mode,
+            stencil_mode=cast(StencilMode, config.physics_loss.stencil_mode),
         )
 
         self.scaler = GradScaler("cuda") if config.amp_enabled and device == "cuda" else None
@@ -282,6 +283,7 @@ class Trainer:
                         dx=self.config.physics_loss.grid_spacing,
                         dy=self.config.physics_loss.grid_spacing,
                         padding_mode=self.config.padding_mode,
+                        mode=cast(StencilMode, self.config.physics_loss.stencil_mode),
                     )
 
                     batch_metrics["kinetic_energy"] = compute_kinetic_energy(velx_pred, vely_pred)
@@ -300,6 +302,7 @@ class Trainer:
                         dx=self.config.physics_loss.grid_spacing,
                         dy=self.config.physics_loss.grid_spacing,
                         padding_mode=self.config.padding_mode,
+                        mode=cast(StencilMode, self.config.physics_loss.stencil_mode),
                     )
 
                     metrics_tracker.update(batch_metrics)

@@ -1,7 +1,7 @@
 import torch
 from torchmetrics.functional.image import structural_similarity_index_measure
 
-from training.physics_loss import compute_divergence
+from training.physics_loss import StencilMode, compute_divergence, compute_spatial_gradients
 
 
 def compute_per_channel_mse(pred: torch.Tensor, target: torch.Tensor) -> dict[str, float]:
@@ -27,15 +27,10 @@ def compute_gradient_l1(
     dx: float = 1.0,
     dy: float = 1.0,
     padding_mode: str = "zeros",
+    mode: StencilMode = "central",
 ) -> float:
-    """
-    L1 loss between predicted and target density gradients.
-    Measures edge preservation quality (lower = sharper, more accurate edges).
-    """
-    from training.physics_loss import compute_spatial_gradients
-
-    grad_pred_x, grad_pred_y = compute_spatial_gradients(density_pred, dx, dy, padding_mode)
-    grad_target_x, grad_target_y = compute_spatial_gradients(density_target, dx, dy, padding_mode)
+    grad_pred_x, grad_pred_y = compute_spatial_gradients(density_pred, dx, dy, padding_mode, mode=mode)
+    grad_target_x, grad_target_y = compute_spatial_gradients(density_target, dx, dy, padding_mode, mode=mode)
 
     l1_x = torch.mean(torch.abs(grad_pred_x - grad_target_x)).item()
     l1_y = torch.mean(torch.abs(grad_pred_y - grad_target_y)).item()
@@ -44,14 +39,10 @@ def compute_gradient_l1(
 
 
 def compute_divergence_norm(
-    velx: torch.Tensor, vely: torch.Tensor, dx: float = 1.0, dy: float = 1.0, padding_mode: str = "zeros"
+    velx: torch.Tensor, vely: torch.Tensor, dx: float = 1.0, dy: float = 1.0,
+    padding_mode: str = "zeros", mode: StencilMode = "central",
 ) -> float:
-    """
-    L2 norm of velocity divergence.
-    Measures incompressibility violation (should be ~0 in free fluid).
-    Target: < 0.1 for stable rollouts.
-    """
-    div = compute_divergence(velx, vely, dx, dy, padding_mode)
+    div = compute_divergence(velx, vely, dx, dy, padding_mode, mode=mode)
     norm = torch.sqrt(torch.mean(div**2)).item()
     return norm
 
