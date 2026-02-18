@@ -225,8 +225,8 @@ class FluidNPZSequenceDataset(Dataset):
     def __init__(
         self,
         npz_dir: str | Path,
+        split: str,
         normalize: bool = False,
-        seq_indices: list[int] | None = None,
         is_training: bool = False,
         augmentation_config: dict | None = None,
         preload: bool = False,
@@ -242,18 +242,15 @@ class FluidNPZSequenceDataset(Dataset):
         self.enable_augmentation = self.augmentation_config.get("enable_augmentation", False)
         self.flip_probability = self.augmentation_config.get("flip_probability", 0.5)
 
-        npz_dir_path = Path(npz_dir)
-        all_seq_paths: list[Path] = sorted(
+        npz_dir_path = Path(npz_dir) / split
+        if not npz_dir_path.exists():
+            raise FileNotFoundError(f"Split directory not found: {npz_dir_path}")
+
+        self.seq_paths: list[Path] = sorted(
             [f for f in npz_dir_path.iterdir() if f.name.startswith("seq_") and f.name.endswith(".npz")]
         )
-        if not all_seq_paths:
-            raise FileNotFoundError(f"No seq_*.npz files found in {npz_dir}")
-
-        # Filter to specified sequences if provided (splits)
-        if seq_indices is not None:
-            self.seq_paths = [all_seq_paths[i] for i in seq_indices]
-        else:
-            self.seq_paths = all_seq_paths
+        if not self.seq_paths:
+            raise FileNotFoundError(f"No seq_*.npz files found in {npz_dir_path}")
 
         self.num_real_sequences = len(self.seq_paths)
         # self.num_fake_sequences = _calculate_fake_count(self.num_real_sequences, fake_empty_pct)
