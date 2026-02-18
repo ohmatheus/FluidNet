@@ -58,36 +58,43 @@ def main() -> None:
     else:
         resolutions = [args.resolution]
 
+    if args.split is None:
+        splits = simulation_config.splits.names
+    else:
+        splits = [args.split]
+
     for resolution_str in resolutions:
         resolution = int(resolution_str)
-        cache_dir = blender_caches_root / resolution_str
-        output_dir = npz_output_root / f"{resolution_str}"
 
-        if not cache_dir.exists():
-            print(f"Warning: Resolution directory not found, skipping: {cache_dir}")
-            continue
+        for split_name in splits:
+            cache_dir = blender_caches_root / resolution_str / split_name
+            output_dir = npz_output_root / resolution_str / split_name
 
-        print(f"\n{'=' * 70}")
-        print(f"Processing resolution: {resolution}x{resolution}")
-        print(f"{'=' * 70}")
-        print(f"Input directory: {cache_dir}")
-        print(f"Output directory: {output_dir}")
+            if not cache_dir.exists():
+                print(f"Warning: Split directory not found, skipping: {cache_dir}")
+                continue
 
-        if output_dir.exists():
-            print(f"Clearing output directory: {output_dir}")
-            shutil.rmtree(output_dir)
+            print(f"\n{'=' * 70}")
+            print(f"Processing: {resolution}x{resolution}, split: {split_name}")
+            print(f"{'=' * 70}")
+            print(f"Input: {cache_dir}")
+            print(f"Output: {output_dir}")
 
-        process_all_cache_sequences(
-            blender_caches_root=cache_dir,
-            output_dir=output_dir,
-            target_resolution=resolution,
-            max_frames=args.max_frames,
-            save_frames=args.save_frames,
-            percentiles=project_config.vdb_tools.stats_percentiles,
-            normalization_percentile=project_config.vdb_tools.normalization_percentile,
-            stats_output_file=project_config.vdb_tools.stats_output_file,
-            num_workers=args.workers,
-        )
+            if output_dir.exists():
+                print(f"Clearing output directory: {output_dir}")
+                shutil.rmtree(output_dir)
+
+            process_all_cache_sequences(
+                blender_caches_root=cache_dir,
+                output_dir=output_dir,
+                target_resolution=resolution,
+                max_frames=args.max_frames,
+                save_frames=args.save_frames,
+                percentiles=project_config.vdb_tools.stats_percentiles,
+                normalization_percentile=project_config.vdb_tools.normalization_percentile,
+                stats_output_file=project_config.vdb_tools.stats_output_file,
+                num_workers=args.workers,
+            )
 
     print(f"\n{'=' * 70}")
     print("All resolutions processed!")
