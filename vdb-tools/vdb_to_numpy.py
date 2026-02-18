@@ -74,7 +74,7 @@ def main() -> None:
         # Collect stats from all splits for aggregation
         # NOTE: Stats computed across all splits (not just train) to ensure proper value
         # clamping to [0,1] or [-1,1]. Deviates from standard ML practice but required
-        # for correct normalization across full dataset. 
+        # for correct normalization across full dataset.
         # The goal is autoregressive rollout, not generalization on unseen data.
         all_splits_stats: list = []
         all_splits_mesh_metadata: dict = {}
