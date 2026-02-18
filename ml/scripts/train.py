@@ -15,7 +15,7 @@ from models.unet import UNet, UNetConfig
 from scripts.variant_manager import VariantManager
 from training.test_evaluation import run_rollout_evaluation, run_test_evaluation
 from training.trainer import Trainer
-from utils.data_splits import make_splits, set_seed
+from utils.seed import set_seed
 
 
 def dict_to_training_config(config_dict: dict) -> TrainingConfig:
@@ -75,9 +75,6 @@ def train_single_variant(
     set_seed(config.split_seed)
 
     npz_dir: Path = config.npz_dir / str(project_config.simulation.grid_resolution)
-    train_idx, val_idx, test_idx = make_splits(npz_dir, config.split_ratios, config.split_seed)
-
-    print(f"Dataset splits: train={len(train_idx)}, val={len(val_idx)}, test={len(test_idx)}")
 
     aug_config_dict = {
         "enable_augmentation": config.augmentation.enable_augmentation,
@@ -88,8 +85,8 @@ def train_single_variant(
 
     train_ds = FluidNPZSequenceDataset(
         npz_dir=npz_dir,
+        split="train",
         normalize=config.normalize,
-        seq_indices=train_idx,
         is_training=True,
         augmentation_config=aug_config_dict,
         preload=config.preload_dataset,
@@ -100,8 +97,8 @@ def train_single_variant(
     val_rollout_steps = config.rollout_step if config.validation_use_rollout_k else 1
     val_ds = FluidNPZSequenceDataset(
         npz_dir=npz_dir,
+        split="val",
         normalize=config.normalize,
-        seq_indices=val_idx,
         is_training=False,
         augmentation_config=None,
         preload=config.preload_dataset,
@@ -243,25 +240,20 @@ def train_single_variant(
             val_loader=val_loader,
             config=config,
             device=config.device,
-            train_indices=train_idx,
-            val_indices=val_idx,
         )
 
         trainer.train()
 
-        if test_idx:
-            run_test_evaluation(
-                model=model,
-                config=config,
-                test_indices=test_idx,
-                device=config.device,
-            )
-            run_rollout_evaluation(
-                model=model,
-                config=config,
-                test_indices=test_idx,
-                device=config.device,
-            )
+        run_test_evaluation(
+            model=model,
+            config=config,
+            device=config.device,
+        )
+        run_rollout_evaluation(
+            model=model,
+            config=config,
+            device=config.device,
+        )
 
         print(f"\nTraining complete: {config.variant.full_model_name}")
         print(f"Best model: {config.checkpoint_dir_variant / 'best_model.pth'}")

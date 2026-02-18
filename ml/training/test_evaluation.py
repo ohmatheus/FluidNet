@@ -78,24 +78,19 @@ def _compute_batch_metrics(
 def run_test_evaluation(
     model: nn.Module,
     config: TrainingConfig,
-    test_indices: list[int],
     device: str,
 ) -> dict[str, dict[str, float]]:
-    if not test_indices:
-        print("No test indices provided, skipping test evaluation.")
-        return {}
-
     npz_dir = config.npz_dir / str(project_config.simulation.grid_resolution)
 
     print(f"\n{'=' * 70}")
     print("TEST SET EVALUATION (best model + persistence baseline)")
     print(f"{'=' * 70}")
-    print(f"Loading test dataset ({len(test_indices)} sequences)...")
+    print("Loading test dataset...")
 
     test_ds = FluidNPZSequenceDataset(
         npz_dir=npz_dir,
+        split="test",
         normalize=config.normalize,
-        seq_indices=test_indices,
         is_training=False,
         augmentation_config=None,
         preload=config.preload_dataset,
@@ -369,16 +364,16 @@ def log_artifact_flat(fig: Figure, filename: str, dpi: int = 72, artifact_path: 
 def run_rollout_evaluation(
     model: nn.Module,
     config: TrainingConfig,
-    test_indices: list[int],
     device: str,
 ) -> dict[str, list[dict[str, float]]]:
-    if not test_indices:
-        print("No test indices provided, skipping rollout evaluation.")
+    npz_dir = config.npz_dir / str(project_config.simulation.grid_resolution)
+    test_npz_dir = npz_dir / "test"
+
+    if not test_npz_dir.exists():
+        print(f"Test split directory not found: {test_npz_dir}, skipping rollout evaluation.")
         return {}
 
-    npz_dir = config.npz_dir / str(project_config.simulation.grid_resolution)
-    all_seq_paths = sorted([p for p in npz_dir.iterdir() if p.name.startswith("seq_") and p.name.endswith(".npz")])
-    test_paths = [all_seq_paths[i] for i in test_indices]
+    test_paths = sorted([p for p in test_npz_dir.iterdir() if p.name.startswith("seq_") and p.name.endswith(".npz")])
 
     norm_scales = None
     if config.normalize:

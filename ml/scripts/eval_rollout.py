@@ -8,7 +8,6 @@ import torch.multiprocessing as mp
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import yaml
 
 from config.config import PROJECT_ROOT_PATH
 from config.training_config import TrainingConfig, project_config
@@ -20,7 +19,6 @@ from training.test_evaluation import (
     _plot_rollout_degradation,
     _run_single_rollout,
 )
-from utils.data_splits import make_splits, set_seed
 
 ML_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ML_ROOT.parent / "data" / "npz" / "128"
@@ -65,12 +63,14 @@ def load_from_checkpoint(checkpoint_dir: Path, device: str) -> tuple[TrainingCon
 def run_rollout_to_disk(
     model: torch.nn.Module,
     config: TrainingConfig,
-    test_indices: list[int],
     device: str,
     output_name: str,
 ) -> None:
-    all_seq_paths = sorted([p for p in DATA_DIR.iterdir() if p.name.startswith("seq_") and p.name.endswith(".npz")])
-    test_paths = [all_seq_paths[i] for i in test_indices]
+    test_data_dir = DATA_DIR / "test"
+    if not test_data_dir.exists():
+        raise FileNotFoundError(f"Test split directory not found: {test_data_dir}")
+
+    test_paths = sorted([p for p in test_data_dir.iterdir() if p.name.startswith("seq_") and p.name.endswith(".npz")])
 
     norm_scales = None
     if config.normalize:
@@ -144,17 +144,8 @@ def main() -> None:
 
     config, model = load_from_checkpoint(checkpoint_dir, device)
 
-    with open(BASE_CONFIG_PATH) as f:
-        base_cfg = yaml.safe_load(f)
-    split_ratios = tuple(base_cfg["split_ratios"])
-    split_seed = base_cfg["split_seed"]
-
-    set_seed(split_seed)
-    _, _, test_idx = make_splits(DATA_DIR, split_ratios, split_seed)
-    print(f"Test sequences: {len(test_idx)}")
-
     output_name = args.output_name or checkpoint_dir.name
-    run_rollout_to_disk(model, config, test_idx, device, output_name)
+    run_rollout_to_disk(model, config, device, output_name)
 
 
 if __name__ == "__main__":

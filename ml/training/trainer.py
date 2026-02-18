@@ -39,18 +39,12 @@ class Trainer:
         val_loader: DataLoader,
         config: TrainingConfig,
         device: str,
-        train_indices: list[int] | None = None,
-        val_indices: list[int] | None = None,
     ) -> None:
         self.model = model
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.config = config.model_copy()
         self.device = device
-
-        # Store indices for dataloader recreation during scheduled rollout
-        self.train_indices = train_indices
-        self.val_indices = val_indices
 
         self.gradient_clip_norm = config.gradient_clip_norm
         self.gradient_clip_enabled = config.gradient_clip_enabled
@@ -391,14 +385,7 @@ class Trainer:
             return total_loss, averaged_dict, final_pred
 
     def _create_dataloader_with_rollout_steps(self, K: int, is_training: bool) -> DataLoader:
-        if is_training:
-            if self.train_indices is None:
-                raise RuntimeError("Cannot recreate dataloader: train_indices not provided to Trainer")
-            indices = self.train_indices
-        else:
-            if self.val_indices is None:
-                raise RuntimeError("Cannot recreate dataloader: val_indices not provided to Trainer")
-            indices = self.val_indices
+        split = "train" if is_training else "val"
 
         npz_dir = (
             PROJECT_ROOT_PATH
@@ -408,8 +395,8 @@ class Trainer:
 
         dataset = FluidNPZSequenceDataset(
             npz_dir=npz_dir,
+            split=split,
             normalize=self.config.normalize,
-            seq_indices=indices,
             is_training=is_training,
             augmentation_config=self.config.augmentation.model_dump() if is_training else None,
             preload=self.config.preload_dataset,
