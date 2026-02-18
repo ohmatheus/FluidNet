@@ -4,11 +4,10 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from config import _PROJECT_ROOT, project_config
+from config import _PROJECT_ROOT, project_config, simulation_config
 
 AVAILABLE_FIELDS = ["density", "velx", "velz", "vel_magnitude", "emitter", "collider"]
 
-INPUT_NPZ = _PROJECT_ROOT / project_config.vdb_tools.npz_output_directory / "128"
 OUTPUT_DIR = _PROJECT_ROOT / "data/npz_image_debug/"
 
 
@@ -174,43 +173,60 @@ def main() -> None:
         choices=AVAILABLE_FIELDS + ["all"],
         help=f"Field to render: {', '.join(AVAILABLE_FIELDS)}, or 'all' (default: density)",
     )
+    parser.add_argument(
+        "--split",
+        type=str,
+        default=None,
+        choices=[None] + simulation_config.splits.names,
+        help="Split to render ('train', 'val', or 'test'). If not specified, processes all splits (default: all)",
+    )
+    parser.add_argument(
+        "--resolution",
+        type=str,
+        default="128",
+        help="Resolution directory to use (default: 128)",
+    )
     parser.add_argument("--scale", type=int, default=4, help="Upscale factor for output images (default: 4)")
     args = parser.parse_args()
 
-    input_path = Path(INPUT_NPZ)
-    output_path = Path(OUTPUT_DIR)
-    _ensure_dir(output_path)
-
-    processed = 0
+    splits = simulation_config.splits.names if args.split is None else [args.split]
     render_all = args.field == "all"
+    processed = 0
 
-    if input_path.is_dir():
-        files: list[Path] = sorted(
-            [f for f in input_path.iterdir() if f.name.startswith("seq_") and f.name.endswith(".npz")]
-        )
-        if not files:
-            raise FileNotFoundError(f"No seq_*.npz found in {args.input}")
-        for fp in files:
-            if render_all:
-                print(f"Rendering all fields from {fp}")
-                render_npz_all_fields(fp, output_path, scale=args.scale)
-            else:
-                n = render_npz_field(fp, output_path, field=args.field, scale=args.scale)
-                print(f"Rendered {n} {args.field} frames from {fp}")
-            processed += 1
-    else:
-        if not input_path.is_file():
-            raise FileNotFoundError(args.input)
-        if render_all:
-            print(f"Rendering all fields from {input_path}")
-            render_npz_all_fields(input_path, output_path, scale=args.scale)
-        else:
-            n = render_npz_field(input_path, output_path, field=args.field, scale=args.scale)
-            print(f"Rendered {n} {args.field} frames from {input_path}")
-        processed = 1
+    for split_name in splits:
+        input_path = _PROJECT_ROOT / project_config.vdb_tools.npz_output_directory / args.resolution / split_name
+        if not input_path.exists():
+            print(f"Warning: Split directory not found, skipping: {input_path}")
+            continue
+
+        output_path = Path(OUTPUT_DIR) / split_name
+        _ensure_dir(output_path)
+
+        print(f"\n{'=' * 70}")
+        print(f"Processing split: {split_name}")
+        print(f"{'=' * 70}")
+
+        if input_path.is_dir():
+            files: list[Path] = sorted(
+                [f for f in input_path.iterdir() if f.name.startswith("seq_") and f.name.endswith(".npz")]
+            )
+            if not files:
+                print(f"Warning: No seq_*.npz found in {input_path}, skipping")
+                continue
+            for fp in files:
+                if render_all:
+                    print(f"Rendering all fields from {fp.name}")
+                    render_npz_all_fields(fp, output_path, scale=args.scale)
+                else:
+                    n = render_npz_field(fp, output_path, field=args.field, scale=args.scale)
+                    print(f"Rendered {n} {args.field} frames from {fp.name}")
+                processed += 1
 
     field_desc = "all fields" if render_all else f"field: {args.field}"
-    print(f"Done. Processed {processed} sequence(s). {field_desc}. Output: {OUTPUT_DIR}")
+    splits_desc = "all splits" if args.split is None else f"split '{args.split}'"
+    print(f"\n{'=' * 70}")
+    print(f"Done. Processed {processed} sequence(s) from {splits_desc}. {field_desc}. Output: {OUTPUT_DIR}")
+    print(f"{'=' * 70}")
 
 
 if __name__ == "__main__":
