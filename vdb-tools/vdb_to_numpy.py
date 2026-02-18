@@ -3,7 +3,7 @@ import shutil
 
 from vdb_core.batch_processing import process_all_cache_sequences
 
-from config import PROJECT_ROOT_PATH, project_config
+from config import PROJECT_ROOT_PATH, project_config, simulation_config
 
 
 def main() -> None:
@@ -26,6 +26,12 @@ def main() -> None:
         type=str,
         default="all",
         help="Resolution to process (64, 128, 256, etc.) or 'all' to process all resolutions (default: all)",
+    )
+    parser.add_argument(
+        "--split",
+        type=str,
+        default=None,
+        help="Specific split to process ('train', 'val', or 'test'). If not specified, processes all splits.",
     )
     parser.add_argument(
         "--workers",
