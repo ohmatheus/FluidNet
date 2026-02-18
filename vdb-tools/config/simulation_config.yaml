@@ -1,0 +1,52 @@
+simulation_generation:
+  splits:
+    enabled: true
+    ratios: [0.70, 0.15, 0.15]
+    names: ["train", "val", "test"]
+    seed: 42
+
+  distribution:
+    no_emitter_pct: 0.05
+    no_collider_pct: 0.50
+    collider_mode_simple_threshold: 0.20
+    collider_mode_medium_threshold: 0.80
+
+  emitters:
+    count_range: [1, 2]
+    scale:
+      min: 0.1
+      max: 0.3
+      max_simple_mode: 0.2
+      y_scale: 0.1
+    position:
+      x_range: [-1.0, 1.0]
+      z_range: [-1.0, -0.2]
+    large_emitter:
+      threshold: 0.12
+      x_range: [-0.6, 0.6]
+      z_position: -0.75
+
+  colliders:
+    simple_mode:
+      count_range: [1, 2]
+      scale:
+        min: 0.08
+        max: 0.25
+        y_scale: 0.1
+    medium_mode:
+      count_range: [1, 2]
+    complex_mode:
+      count_range: [2, 3]
+      scale:
+        min: 0.3
+        max: 0.8
+    position:
+      z_range: [0.1, 1.0]
+
+  domain:
+    y_scale: 0.05
+    vorticity: 0.05
+    beta: 0.0
+
+  animation:
+    max_displacement: 1.0e-5
