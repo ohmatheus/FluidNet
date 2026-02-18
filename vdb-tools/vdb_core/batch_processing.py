@@ -429,14 +429,14 @@ def process_all_cache_sequences(
     save_frames: bool = False,
     percentiles: list[int] | None = None,
     normalization_percentile: int = 95,
-    stats_output_file: str = "data/_field_stats.yaml",
+    stats_output_file: str | None = "data/_field_stats.yaml",
     num_workers: int = 1,
-) -> None:
+) -> tuple[list, dict]:
     cache_data_dirs = discover_cache_sequences(blender_caches_root)
 
     if not cache_data_dirs:
         print(f"No cache sequences found in {blender_caches_root}")
-        return
+        return ([], {})
 
     print(f"Found {len(cache_data_dirs)} cache sequences to process:")
     for cache_data_dir in cache_data_dirs:
@@ -507,8 +507,8 @@ def process_all_cache_sequences(
             total_sequences += sequences_from_cache
             all_sequence_stats.extend(cache_stats)
 
-    # Compute and save global statistics
-    if all_sequence_stats:
+    # Compute and optionally save global statistics
+    if all_sequence_stats and stats_output_file is not None:
         try:
             global_stats = aggregate_global_stats(all_sequence_stats, percentiles=percentiles_to_use)
             normalization_scales = compute_normalization_scales(global_stats, normalization_percentile)
@@ -537,9 +537,12 @@ def process_all_cache_sequences(
         except Exception as e:
             print(f"\nError: Failed to save statistics: {e}")
             print("This is non-critical; NPZ files were created successfully.")
-    else:
+    elif not all_sequence_stats:
         print("\nWarning: No sequences were created, no statistics computed.")
 
     print(f"\n{'=' * 60}")
     print(f"COMPLETE: Generated {total_sequences} total sequences in {output_dir}")
     print(f"{'=' * 60}")
+
+    # Return stats and metadata for caller aggregation
+    return (all_sequence_stats, all_mesh_metadata)
