@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from math import ceil
 from pathlib import Path
 
-from config import PROJECT_ROOT_PATH, project_config, simulation_config, vdb_config
+from config import PROJECT_ROOT_PATH, SimulationGenerationConfig, simulation_config, vdb_config
 
 BLENDER_SCRIPT = Path(__file__).parent / "blender_scripts/create_random_simulation.py"
 
@@ -26,7 +26,7 @@ class SplitPlan:
     collider_complex_count: int
 
 
-def compute_split_plan(split_count: int, split_name: str, gen_config) -> SplitPlan:
+def compute_split_plan(split_count: int, split_name: str, gen_config: SimulationGenerationConfig) -> SplitPlan:
     no_emitter_count = max(1, ceil(split_count * gen_config.distribution.no_emitter_pct))
     no_collider_count = max(1, ceil(no_emitter_count * gen_config.distribution.no_collider_pct))
 
@@ -49,7 +49,7 @@ def compute_split_plan(split_count: int, split_name: str, gen_config) -> SplitPl
     )
 
 
-def assign_simulations_to_splits(total_sims: int, gen_config) -> dict[str, SplitPlan]:
+def assign_simulations_to_splits(total_sims: int, gen_config: SimulationGenerationConfig) -> dict[str, SplitPlan]:
     ratios = gen_config.splits.ratios
     names = gen_config.splits.names
 
@@ -64,10 +64,12 @@ def assign_simulations_to_splits(total_sims: int, gen_config) -> dict[str, Split
         for i in range(leftover):
             allocated[sorted_idx[i]] += 1
 
-    return {name: compute_split_plan(count, name, gen_config) for name, count in zip(names, allocated)}
+    return {name: compute_split_plan(count, name, gen_config) for name, count in zip(names, allocated, strict=True)}
 
 
-def pack_config(gen_config, sim_index: int, base_seed: int, split_name: str, sim_type: dict) -> dict:
+def pack_config(
+    gen_config: SimulationGenerationConfig, sim_index: int, base_seed: int, split_name: str, sim_type: dict
+) -> dict:
     em = gen_config.emitters
     col = gen_config.colliders
 
@@ -106,7 +108,7 @@ def pack_config(gen_config, sim_index: int, base_seed: int, split_name: str, sim
 
 
 def generate_simulation_configs(
-    split_plans: dict[str, SplitPlan], start_index: int, base_seed: int, gen_config
+    split_plans: dict[str, SplitPlan], start_index: int, base_seed: int, gen_config: SimulationGenerationConfig
 ) -> list[tuple[int, str, dict]]:
     rng = random.Random(base_seed)
     all_configs = []
@@ -116,11 +118,13 @@ def generate_simulation_configs(
         sim_types = []
 
         for i in range(plan.no_emitter_count):
-            sim_types.append({
-                "collider_mode": None,
-                "no_emitters": True,
-                "no_colliders": (i < plan.no_collider_count),
-            })
+            sim_types.append(
+                {
+                    "collider_mode": None,
+                    "no_emitters": True,
+                    "no_colliders": (i < plan.no_collider_count),
+                }
+            )
 
         for _ in range(plan.collider_simple_count):
             sim_types.append({"collider_mode": "simple", "no_emitters": False, "no_colliders": False})
@@ -193,7 +197,9 @@ def generate_simulation(
 
     cmd = [str(blender_path), "--background", "--python", str(BLENDER_SCRIPT), "--", json.dumps(params)]
 
-    print(f"\n[{split_name}] Simulation {sim_index}: {cache_name} (res={resolution}, frames={frames}, seed={config_dict['seed']})")
+    print(
+        f"\n[{split_name}] Simulation {sim_index}: {cache_name} (res={resolution}, frames={frames}, seed={config_dict['seed']})"
+    )
 
     try:
         result = subprocess.run(cmd, timeout=3600)
@@ -282,7 +288,9 @@ def main() -> None:
         print(f"\n{split_name.upper()} ({plan.total_count} sims):")
         print(f"  No emitters: {plan.no_emitter_count} (no colliders: {plan.no_collider_count})")
         print(f"  With emitters: {plan.total_count - plan.no_emitter_count}")
-        print(f"    Simple: {plan.collider_simple_count}, Medium: {plan.collider_medium_count}, Complex: {plan.collider_complex_count}")
+        print(
+            f"    Simple: {plan.collider_simple_count}, Medium: {plan.collider_medium_count}, Complex: {plan.collider_complex_count}"
+        )
     print(f"{'=' * 70}\n")
 
     sim_configs = generate_simulation_configs(split_plans, args.start_index, base_seed, gen_config)
