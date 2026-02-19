@@ -107,6 +107,7 @@ def get_vorticity_levels(v: VorticityConfig) -> list[float]:
     if isinstance(v.range, (int, float)):
         return [float(v.range)]
     import numpy as np
+
     return np.arange(v.range[0], v.range[1] + v.step / 2, v.step).tolist()
 
 
