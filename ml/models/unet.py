@@ -49,7 +49,7 @@ class ConditioningEncoder(nn.Module):
         )
 
     def forward(self, c: torch.Tensor) -> torch.Tensor:
-        return self.mlp(c.unsqueeze(-1))  # (B,) → (B,1) → (B, cond_dim)
+        return cast("torch.Tensor", self.mlp(c.unsqueeze(-1)))  # (B,) → (B,1) → (B, cond_dim)
 
 
 class FiLMLayer(nn.Module):
@@ -58,7 +58,7 @@ class FiLMLayer(nn.Module):
         self.proj = nn.Linear(cond_dim, 2 * ch)
 
     def forward(self, x: torch.Tensor, cond_emb: torch.Tensor) -> torch.Tensor:
-        gamma, beta = self.proj(cond_emb).chunk(2, dim=-1)  # each (B, C)
+        gamma, beta = cast("torch.Tensor", self.proj(cond_emb)).chunk(2, dim=-1)  # each (B, C)
         return gamma.unsqueeze(-1).unsqueeze(-1) * x + beta.unsqueeze(-1).unsqueeze(-1)
 
 
@@ -117,8 +117,14 @@ class ResBlock(nn.Module):
     ) -> None:
         super().__init__()
         self.b = ConvBlock(
-            ch, ch, norm=norm, act=act, groups=groups, dropout=dropout,
-            padding_mode=padding_mode, film_cond_dim=film_cond_dim,
+            ch,
+            ch,
+            norm=norm,
+            act=act,
+            groups=groups,
+            dropout=dropout,
+            padding_mode=padding_mode,
+            film_cond_dim=film_cond_dim,
         )
 
     def forward(self, x: torch.Tensor, cond_emb: torch.Tensor | None = None) -> torch.Tensor:
@@ -149,12 +155,25 @@ class Down(nn.Module):
     ) -> None:
         super().__init__()
         self.block = ConvBlock(
-            in_ch, out_ch, norm=norm, act=act, groups=groups, dropout=dropout,
-            padding_mode=padding_mode, film_cond_dim=film_cond_dim,
+            in_ch,
+            out_ch,
+            norm=norm,
+            act=act,
+            groups=groups,
+            dropout=dropout,
+            padding_mode=padding_mode,
+            film_cond_dim=film_cond_dim,
         )
         self.res = (
-            ResBlock(out_ch, norm=norm, act=act, groups=groups, dropout=dropout,
-                     padding_mode=padding_mode, film_cond_dim=film_cond_dim)
+            ResBlock(
+                out_ch,
+                norm=norm,
+                act=act,
+                groups=groups,
+                dropout=dropout,
+                padding_mode=padding_mode,
+                film_cond_dim=film_cond_dim,
+            )
             if use_residual
             else nn.Identity()
         )
@@ -200,12 +219,25 @@ class Up(nn.Module):
             )
 
         self.block = ConvBlock(
-            in_ch + skip_ch, out_ch, norm=norm, act=act, groups=groups, dropout=dropout,
-            padding_mode=padding_mode, film_cond_dim=film_cond_dim,
+            in_ch + skip_ch,
+            out_ch,
+            norm=norm,
+            act=act,
+            groups=groups,
+            dropout=dropout,
+            padding_mode=padding_mode,
+            film_cond_dim=film_cond_dim,
         )
         self.res = (
-            ResBlock(out_ch, norm=norm, act=act, groups=groups, dropout=dropout,
-                     padding_mode=padding_mode, film_cond_dim=film_cond_dim)
+            ResBlock(
+                out_ch,
+                norm=norm,
+                act=act,
+                groups=groups,
+                dropout=dropout,
+                padding_mode=padding_mode,
+                film_cond_dim=film_cond_dim,
+            )
             if use_residual
             else nn.Identity()
         )
@@ -282,10 +314,15 @@ class UNet(nn.Module):
             out_ch = ch * 2
             downs.append(
                 Down(
-                    ch, out_ch,
-                    norm=self.cfg.norm, act=self.cfg.act, groups=self.cfg.group_norm_groups,
-                    dropout=self.cfg.dropout, use_residual=self.cfg.use_residual,
-                    downsample=self.cfg.downsample, padding_mode=self.cfg.padding_mode,
+                    ch,
+                    out_ch,
+                    norm=self.cfg.norm,
+                    act=self.cfg.act,
+                    groups=self.cfg.group_norm_groups,
+                    dropout=self.cfg.dropout,
+                    use_residual=self.cfg.use_residual,
+                    downsample=self.cfg.downsample,
+                    padding_mode=self.cfg.padding_mode,
                     film_cond_dim=film_cond_dim,
                 )
             )
@@ -298,8 +335,11 @@ class UNet(nn.Module):
             mids.append(
                 ResBlock(
                     ch,
-                    norm=self.cfg.norm, act=self.cfg.act, groups=self.cfg.group_norm_groups,
-                    dropout=self.cfg.dropout, padding_mode=self.cfg.padding_mode,
+                    norm=self.cfg.norm,
+                    act=self.cfg.act,
+                    groups=self.cfg.group_norm_groups,
+                    dropout=self.cfg.dropout,
+                    padding_mode=self.cfg.padding_mode,
                     film_cond_dim=film_cond_dim,
                 )
             )
@@ -311,10 +351,16 @@ class UNet(nn.Module):
             out_ch = skip_ch // 2
             ups.append(
                 Up(
-                    ch, skip_ch, out_ch,
-                    upsample=self.cfg.upsample, norm=self.cfg.norm, act=self.cfg.act,
-                    groups=self.cfg.group_norm_groups, dropout=self.cfg.dropout,
-                    use_residual=self.cfg.use_residual, padding_mode=self.cfg.padding_mode,
+                    ch,
+                    skip_ch,
+                    out_ch,
+                    upsample=self.cfg.upsample,
+                    norm=self.cfg.norm,
+                    act=self.cfg.act,
+                    groups=self.cfg.group_norm_groups,
+                    dropout=self.cfg.dropout,
+                    use_residual=self.cfg.use_residual,
+                    padding_mode=self.cfg.padding_mode,
                     film_cond_dim=film_cond_dim,
                 )
             )

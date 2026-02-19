@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import tempfile
 from pathlib import Path
@@ -112,21 +113,20 @@ def run_test_evaluation(
     model.eval()
     with torch.no_grad():
         pbar = tqdm(test_loader, desc="Test evaluation", leave=False)
-        for inputs, targets in pbar:
+        for inputs, targets, cond in pbar:
             inputs = inputs.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
+            cond = cond.to(device, non_blocking=True)
 
-            # Model prediction
             if config.amp_enabled and device == "cuda":
                 with autocast(device_type=device):
-                    outputs = model(inputs)
+                    outputs = model(inputs, cond)
             else:
-                outputs = model(inputs)
+                outputs = model(inputs, cond)
 
             model_metrics = _compute_batch_metrics(outputs, targets, inputs, config)
             model_tracker.update(model_metrics)
 
-            # Persistence baseline: predict current frame = next frame
             persistence_pred = inputs[:, 0:3, :, :]
             persistence_metrics = _compute_batch_metrics(persistence_pred, targets, inputs, config)
             persistence_tracker.update(persistence_metrics)
@@ -134,7 +134,6 @@ def run_test_evaluation(
     model_avg = model_tracker.compute_averages()
     persistence_avg = persistence_tracker.compute_averages()
 
-    # Log to MLflow
     mlflow.log_metrics({f"test_{k}": v for k, v in model_avg.items()})
     mlflow.log_metrics({f"test_persistence_{k}": v for k, v in persistence_avg.items()})
 
@@ -197,6 +196,7 @@ def _run_single_rollout(
     device: str,
     use_amp: bool,
     config: TrainingConfig,
+    cond_scalar: float | None = None,
 ) -> list[dict[str, float]]:
     d = data["density"]
     vx = data["velx"]
@@ -209,7 +209,6 @@ def _run_single_rollout(
             return arr / norm_scales[key]
         return arr
 
-    # Initial state
     d_t = norm(d[t_start], "S_density")
     d_tminus = norm(d[t_start - 1], "S_density")
     vx_t = norm(vx[t_start], "S_velx")
@@ -217,6 +216,7 @@ def _run_single_rollout(
 
     state_current = torch.tensor(np.stack([d_t, vx_t, vz_t], axis=0), dtype=torch.float32, device=device).unsqueeze(0)
     state_prev = torch.tensor(d_tminus[np.newaxis], dtype=torch.float32, device=device).unsqueeze(0)
+    cond_t = torch.tensor([cond_scalar or 0.0], dtype=torch.float32, device=device)
 
     step_metrics: list[dict[str, float]] = []
 
@@ -231,11 +231,10 @@ def _run_single_rollout(
 
         if use_amp and device == "cuda":
             with autocast(device_type=device):
-                pred = model(model_input)
+                pred = model(model_input, cond_t)
         else:
-            pred = model(model_input)
+            pred = model(model_input, cond_t)
 
-        # GT for this step
         gt_d = norm(d[t_next], "S_density")
         gt_vx = norm(vx[t_next], "S_velx")
         gt_vz = norm(vz[t_next], "S_velz")
@@ -285,7 +284,6 @@ def _run_single_rollout(
             }
         )
 
-        # Autoregressive update
         state_prev = state_current[:, 0:1, :, :]
         state_current = pred
 
@@ -303,7 +301,6 @@ def _plot_rollout_degradation(avg_per_step: list[dict[str, float]]) -> Figure:
 
     fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(12, 5))
 
-    # Left: MSE + SSIM
     ax_mse = ax_left
     ax_mse.plot(steps, mse_d, color="blue", linewidth=2, label="MSE Density")
     ax_mse.plot(steps, mse_vx, color="orange", linewidth=2, label="MSE Vel-X")
@@ -322,10 +319,8 @@ def _plot_rollout_degradation(avg_per_step: list[dict[str, float]]) -> Figure:
     lines1, labels1 = ax_mse.get_legend_handles_labels()
     lines2, labels2 = ax_ssim.get_legend_handles_labels()
     ax_mse.legend(lines1 + lines2, labels1 + labels2, loc="best", fontsize=9)
-
     ax_mse.set_title("MSE per Channel + SSIM")
 
-    # Right: Divergence + Gradient
     ax_div = ax_right
     ax_div.plot(steps, div_norm, color="red", linewidth=2, label="Divergence Norm")
     ax_div.set_xlabel("Autoregressive Step")
@@ -341,7 +336,6 @@ def _plot_rollout_degradation(avg_per_step: list[dict[str, float]]) -> Figure:
     lines1, labels1 = ax_div.get_legend_handles_labels()
     lines2, labels2 = ax_grad.get_legend_handles_labels()
     ax_div.legend(lines1 + lines2, labels1 + labels2, loc="best", fontsize=9)
-
     ax_div.set_title("Divergence Norm + Gradient L1")
 
     plt.suptitle("Rollout Degradation (30 steps)", fontsize=13, fontweight="bold")
@@ -385,13 +379,17 @@ def run_rollout_evaluation(
     print(f"{'=' * 70}")
     print(f"Sequences: {len(test_paths)} | Steps: {ROLLOUT_STEPS} | Starting points: {len(STARTING_POINTS)}")
 
-    # Collect all rollout results: [step][rollout_idx] -> metrics
     all_rollouts: list[list[dict[str, float]]] = [[] for _ in range(ROLLOUT_STEPS)]
     total_rollouts = 0
 
     model.eval()
     with torch.no_grad():
         for seq_path in tqdm(test_paths, desc="Rollout evaluation", leave=False):
+            meta_path = seq_path.with_name(seq_path.stem + ".meta.json")
+            cond_scalar: float | None = None
+            if meta_path.exists():
+                cond_scalar = json.loads(meta_path.read_text()).get("vorticity")
+
             with np.load(seq_path) as npz:
                 data = {
                     "density": npz["density"].astype(np.float32),
@@ -406,13 +404,12 @@ def run_rollout_evaluation(
 
             for t_start in starting_frames:
                 step_metrics = _run_single_rollout(
-                    model, data, t_start, norm_scales, device, config.amp_enabled, config
+                    model, data, t_start, norm_scales, device, config.amp_enabled, config, cond_scalar
                 )
                 for k, m in enumerate(step_metrics):
                     all_rollouts[k].append(m)
                 total_rollouts += 1
 
-    # Average per step
     avg_per_step: list[dict[str, float]] = []
     for k in range(ROLLOUT_STEPS):
         if not all_rollouts[k]:
@@ -442,7 +439,6 @@ def run_rollout_evaluation(
         }
         avg_per_step.append(avg)
 
-    # Log scalars to MLflow
     mse_at_30 = avg_per_step[-1]["mse_density"]
     ssim_at_30 = avg_per_step[-1]["ssim_density"]
     div_at_30 = avg_per_step[-1]["divergence_norm"]
@@ -452,11 +448,9 @@ def run_rollout_evaluation(
     mlflow.log_metric("test_rollout_divergence_norm_step30", div_at_30)
     mlflow.log_metric("test_rollout_gradient_l1_step30", grad_at_30)
 
-    # Plot and log
     fig = _plot_rollout_degradation(avg_per_step)
     log_artifact_flat(fig, "rollout_degradation.png", dpi=100)
 
-    # Console output
     print(f"\nTotal rollouts: {total_rollouts} ({len(test_paths)} sequences x {len(STARTING_POINTS)} starts)")
     print(
         f"\n{'Step':<8} {'MSE Density':>12} {'MSE Vel-X':>12} {'MSE Vel-Y':>12} "
@@ -474,3 +468,76 @@ def run_rollout_evaluation(
     print("=" * 100)
 
     return {"avg_per_step": avg_per_step}
+
+
+def run_vorticity_mse_evaluation(
+    model: nn.Module,
+    config: TrainingConfig,
+    device: str,
+) -> None:
+    npz_dir = config.npz_dir / str(project_config.simulation.grid_resolution)
+
+    test_ds = FluidNPZSequenceDataset(
+        npz_dir=npz_dir,
+        split="test",
+        normalize=config.normalize,
+        is_training=False,
+        preload=config.preload_dataset,
+        rollout_steps=1,
+    )
+
+    if not any(v is not None for v in test_ds._seq_scalars):
+        print("No vorticity scalars found in test set, skipping vorticity MSE evaluation.")
+        return
+
+    test_loader = DataLoader(test_ds, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers)
+
+    # {vorticity_level: [mse_density, mse_velx, mse_velz]}
+    grouped: dict[float, list[list[float]]] = {}
+
+    model.eval()
+    with torch.no_grad():
+        for inputs, targets, cond in tqdm(test_loader, desc="Vorticity MSE eval", leave=False):
+            inputs = inputs.to(device, non_blocking=True)
+            targets = targets.to(device, non_blocking=True)
+            cond = cond.to(device, non_blocking=True)
+
+            if config.amp_enabled and device == "cuda":
+                with autocast(device_type=device):
+                    outputs = model(inputs, cond)
+            else:
+                outputs = model(inputs, cond)
+
+            for i in range(outputs.shape[0]):
+                level = round(cond[i].item(), 2)
+                mse_d = torch.mean((outputs[i, 0] - targets[i, 0]) ** 2).item()
+                mse_vx = torch.mean((outputs[i, 1] - targets[i, 1]) ** 2).item()
+                mse_vz = torch.mean((outputs[i, 2] - targets[i, 2]) ** 2).item()
+                grouped.setdefault(level, []).append([mse_d, mse_vx, mse_vz])
+
+    if not grouped:
+        return
+
+    levels = sorted(grouped.keys())
+    means = {lv: np.mean(grouped[lv], axis=0) for lv in levels}  # (3,) per level
+
+    fig, ax = plt.subplots(figsize=(max(6, len(levels) * 1.5), 5))
+    x = np.arange(len(levels))
+    width = 0.25
+    colors = ["#2196F3", "#FF9800", "#4CAF50"]
+    labels = ["Density", "Vel-X", "Vel-Z"]
+
+    for ci, (color, label) in enumerate(zip(colors, labels, strict=True)):
+        vals = [means[lv][ci] for lv in levels]
+        ax.bar(x + ci * width, vals, width, label=label, color=color, alpha=0.85)
+
+    ax.set_xticks(x + width)
+    ax.set_xticklabels([str(lv) for lv in levels])
+    ax.set_xlabel("Vorticity Level")
+    ax.set_ylabel("MSE")
+    ax.set_title("MSE by Vorticity Level (Test Set)")
+    ax.legend()
+    ax.grid(True, axis="y", alpha=0.3)
+    plt.tight_layout()
+
+    log_artifact_flat(fig, "vorticity_mse_by_level.png", dpi=90)
