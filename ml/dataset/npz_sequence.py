@@ -1,3 +1,4 @@
+import json
 import time
 from pathlib import Path
 
@@ -253,7 +254,14 @@ class FluidNPZSequenceDataset(Dataset):
             raise FileNotFoundError(f"No seq_*.npz files found in {npz_dir_path}")
 
         self.num_real_sequences = len(self.seq_paths)
-        # self.num_fake_sequences = _calculate_fake_count(self.num_real_sequences, fake_empty_pct)
+
+        self._seq_scalars: list[float | None] = []
+        for path in self.seq_paths:
+            meta_path = path.with_name(path.stem + ".meta.json")
+            if meta_path.exists():
+                self._seq_scalars.append(json.loads(meta_path.read_text()).get("vorticity"))
+            else:
+                self._seq_scalars.append(None)
 
         # Load global normalization scales
         self._norm_scales: dict[str, float] | None = None
@@ -437,14 +445,14 @@ class FluidNPZSequenceDataset(Dataset):
 
     def __getitem__(
         self, idx: int
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         si, t = self._index[idx]
 
-        # Handle real sequences
         path = self.seq_paths[si]
+        cond_val = self._seq_scalars[si]
+        cond = torch.tensor(cond_val if cond_val is not None else 0.0, dtype=torch.float32)
 
         if self.rollout_steps > 1:
-            # Multi-step rollout mode
             if self.preload and self._preloaded_sequences is not None:
                 x, y_seq, masks = self._load_rollout_sample_from_memory(si, t)
             else:
@@ -455,9 +463,8 @@ class FluidNPZSequenceDataset(Dataset):
 
                 x, y_seq, masks = apply_rollout_augmentation(x, y_seq, masks, self.flip_probability)
 
-            return x, y_seq, masks
+            return x, y_seq, masks, cond
         else:
-            # Single-step mode (existing code)
             if self.preload and self._preloaded_sequences is not None:
                 x, y = self._load_sample_from_memory(si, t)
             else:
@@ -466,4 +473,4 @@ class FluidNPZSequenceDataset(Dataset):
             if self.is_training and self.enable_augmentation:
                 x, y = apply_augmentation(x, y, self.flip_probability)
 
-            return x, y
+            return x, y, cond
