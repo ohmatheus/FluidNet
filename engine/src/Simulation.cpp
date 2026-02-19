@@ -321,8 +321,8 @@ float Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer
                 float vorticity = m_vorticity.load(std::memory_order_acquire);
                 const int64_t condShape[] = {1};
                 auto condMemInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-                Ort::Value condTensor = Ort::Value::CreateTensor<float>(
-                    condMemInfo, &vorticity, 1, condShape, 1);
+                Ort::Value condTensor =
+                    Ort::Value::CreateTensor<float>(condMemInfo, &vorticity, 1, condShape, 1);
 
                 const char* inputNames[] = {inputName0.get(), inputName1.get()};
                 std::vector<Ort::Value> inputVec;
