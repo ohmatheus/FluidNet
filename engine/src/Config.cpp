@@ -48,6 +48,22 @@ template <> struct convert<FluidNet::SimulationConfig>
         {
             config.inputChannels = node["input_channels"].as<int>();
         }
+        if (node["vorticity_default"])
+        {
+            config.vorticityDefault = node["vorticity_default"].as<float>();
+        }
+        if (node["vorticity_min"])
+        {
+            config.vorticityMin = node["vorticity_min"].as<float>();
+        }
+        if (node["vorticity_max"])
+        {
+            config.vorticityMax = node["vorticity_max"].as<float>();
+        }
+        if (node["vorticity_step"])
+        {
+            config.vorticityStep = node["vorticity_step"].as<float>();
+        }
         return true;
     }
 };

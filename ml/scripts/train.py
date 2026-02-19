@@ -13,7 +13,7 @@ from config.training_config import TrainingConfig, VariantMetadata, project_conf
 from dataset.npz_sequence import FluidNPZSequenceDataset
 from models.unet import UNet, UNetConfig
 from scripts.variant_manager import VariantManager
-from training.test_evaluation import run_rollout_evaluation, run_test_evaluation
+from training.test_evaluation import run_rollout_evaluation, run_test_evaluation, run_vorticity_mse_evaluation
 from training.trainer import Trainer
 from utils.seed import set_seed
 
@@ -126,6 +126,8 @@ def train_single_variant(
             use_residual=config.use_residual,
             bottleneck_blocks=config.bottleneck_blocks,
             output_activation=config.output_activation,
+            use_film=config.use_film,
+            film_cond_dim=config.film_cond_dim,
         )
     ).to(config.device)
 
@@ -228,6 +230,8 @@ def train_single_variant(
                 "use_residual": config.use_residual,
                 "bottleneck_blocks": config.bottleneck_blocks,
                 "output_activation": config.output_activation,
+                "use_film": config.use_film,
+                "film_cond_dim": config.film_cond_dim,
                 # Checkpoint settings
                 "save_every_n_epochs": config.save_every_n_epochs,
                 "keep_last_n_checkpoints": config.keep_last_n_checkpoints,
@@ -250,6 +254,11 @@ def train_single_variant(
             device=config.device,
         )
         run_rollout_evaluation(
+            model=model,
+            config=config,
+            device=config.device,
+        )
+        run_vorticity_mse_evaluation(
             model=model,
             config=config,
             device=config.device,

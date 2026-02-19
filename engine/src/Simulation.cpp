@@ -15,6 +15,7 @@ Simulation::Simulation()
     const auto& config = Config::getInstance();
     m_targetStepTime = 1.0f / config.getSimulationFPS();
     m_useGpu = config.isGpuEnabled();
+    m_vorticity.store(config.getVorticityDefault(), std::memory_order_relaxed);
 
     int resolution = config.getGridResolution();
 
@@ -156,6 +157,16 @@ void Simulation::setSceneSnapshot(const std::atomic<SceneMaskSnapshot*>* snapsho
     m_sceneSnapshotPtr = snapshot;
 }
 
+void Simulation::setVorticity(float v)
+{
+    m_vorticity.store(v, std::memory_order_release);
+}
+
+float Simulation::getVorticity() const
+{
+    return m_vorticity.load(std::memory_order_acquire);
+}
+
 void Simulation::workerLoop_()
 {
     PROFILE_SET_THREAD_NAME("Simulation Thread");
@@ -292,11 +303,11 @@ float Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer
         }
 
         Ort::AllocatorWithDefaultOptions allocator;
-        auto inputName = m_ortSession->GetInputNameAllocated(0, allocator);
+        auto inputName0 = m_ortSession->GetInputNameAllocated(0, allocator);
         auto outputName = m_ortSession->GetOutputNameAllocated(0, allocator);
-
-        const char* inputNames[] = {inputName.get()};
         const char* outputNames[] = {outputName.get()};
+
+        const size_t numModelInputs = m_ortSession->GetInputCount();
 
         auto inferenceStart = Clock::now();
 
@@ -304,8 +315,28 @@ float Simulation::runInferenceStep_(SimulationBuffer* frontBuf, SimulationBuffer
         {
             PROFILE_SCOPE_NAMED("ONNX Runtime Execute");
             PROFILE_ZONE_TEXT("Model Inference", 15);
-            outputTensors = m_ortSession->Run(Ort::RunOptions{nullptr}, inputNames, &inputTensor, 1,
-                                              outputNames, 1);
+            if (numModelInputs >= 2)
+            {
+                auto inputName1 = m_ortSession->GetInputNameAllocated(1, allocator);
+                float vorticity = m_vorticity.load(std::memory_order_acquire);
+                const int64_t condShape[] = {1};
+                auto condMemInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+                Ort::Value condTensor =
+                    Ort::Value::CreateTensor<float>(condMemInfo, &vorticity, 1, condShape, 1);
+
+                const char* inputNames[] = {inputName0.get(), inputName1.get()};
+                std::vector<Ort::Value> inputVec;
+                inputVec.push_back(std::move(inputTensor));
+                inputVec.push_back(std::move(condTensor));
+                outputTensors = m_ortSession->Run(Ort::RunOptions{nullptr}, inputNames,
+                                                  inputVec.data(), 2, outputNames, 1);
+            }
+            else
+            {
+                const char* inputNames[] = {inputName0.get()};
+                outputTensors = m_ortSession->Run(Ort::RunOptions{nullptr}, inputNames,
+                                                  &inputTensor, 1, outputNames, 1);
+            }
         }
 
         auto inferenceEnd = Clock::now();

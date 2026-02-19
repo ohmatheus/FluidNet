@@ -14,6 +14,10 @@ simulation:
   fps: 24.0
   grid_resolution: 128
   input_channels: 6      #[density, velx, vely, density-1, emitter_mask, collider_mask]
+  vorticity_default: 0.2
+  vorticity_min: 0.1
+  vorticity_max: 0.4
+  vorticity_step: 0.1
 
 engine:
   window_width: 1250

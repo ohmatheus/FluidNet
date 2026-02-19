@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from math import ceil
 from pathlib import Path
 
-from config import PROJECT_ROOT_PATH, SimulationGenerationConfig, simulation_config, vdb_config
+from config import PROJECT_ROOT_PATH, SimulationGenerationConfig, get_vorticity_levels, simulation_config, vdb_config
 
 BLENDER_SCRIPT = Path(__file__).parent / "blender_scripts/create_random_simulation.py"
 
@@ -24,28 +24,36 @@ class SplitPlan:
     collider_simple_count: int
     collider_medium_count: int
     collider_complex_count: int
+    vorticity_levels: list[float]
 
 
 def compute_split_plan(split_count: int, split_name: str, gen_config: SimulationGenerationConfig) -> SplitPlan:
-    no_emitter_count = max(1, ceil(split_count * gen_config.distribution.no_emitter_pct))
-    no_collider_count = max(1, ceil(no_emitter_count * gen_config.distribution.no_collider_pct))
+    levels = get_vorticity_levels(gen_config.domain.vorticity)
+    n_levels = len(levels)
 
-    sims_with_emitters = split_count - no_emitter_count
     simple_thresh = gen_config.distribution.collider_mode_simple_threshold
     medium_thresh = gen_config.distribution.collider_mode_medium_threshold
 
-    collider_simple = max(1, ceil(sims_with_emitters * simple_thresh))
-    collider_medium = max(1, ceil(sims_with_emitters * (medium_thresh - simple_thresh)))
-    collider_complex = max(0, sims_with_emitters - collider_simple - collider_medium)
+    raw_no_emitter = max(1, ceil(split_count * gen_config.distribution.no_emitter_pct))
+    no_emitter_count = ceil(raw_no_emitter / n_levels) * n_levels
+    no_collider_count = max(1, ceil(raw_no_emitter * gen_config.distribution.no_collider_pct))
+
+    raw_fluid = split_count - raw_no_emitter
+    n_fluid_total = ceil(max(1, raw_fluid) / n_levels) * n_levels
+
+    collider_simple = max(1, ceil(n_fluid_total * simple_thresh))
+    collider_medium = max(1, ceil(n_fluid_total * (medium_thresh - simple_thresh)))
+    collider_complex = max(0, n_fluid_total - collider_simple - collider_medium)
 
     return SplitPlan(
         split_name=split_name,
-        total_count=split_count,
+        total_count=no_emitter_count + n_fluid_total,
         no_emitter_count=no_emitter_count,
         no_collider_count=no_collider_count,
         collider_simple_count=collider_simple,
         collider_medium_count=collider_medium,
         collider_complex_count=collider_complex,
+        vorticity_levels=levels,
     )
 
 
@@ -68,7 +76,12 @@ def assign_simulations_to_splits(total_sims: int, gen_config: SimulationGenerati
 
 
 def pack_config(
-    gen_config: SimulationGenerationConfig, sim_index: int, base_seed: int, split_name: str, sim_type: dict
+    gen_config: SimulationGenerationConfig,
+    sim_index: int,
+    base_seed: int,
+    split_name: str,
+    sim_type: dict,
+    domain_vorticity: float,
 ) -> dict:
     em = gen_config.emitters
     col = gen_config.colliders
@@ -101,7 +114,7 @@ def pack_config(
         "collider_z_range": list(col.position.z_range),
         # Domain & animation
         "domain_y_scale": gen_config.domain.y_scale,
-        "domain_vorticity": gen_config.domain.vorticity,
+        "domain_vorticity": domain_vorticity,
         "domain_beta": gen_config.domain.beta,
         "anim_max_displacement": gen_config.animation.max_displacement,
     }
@@ -115,28 +128,36 @@ def generate_simulation_configs(
     sim_index = start_index
 
     for split_name, plan in split_plans.items():
-        sim_types = []
+        # Vorticity levels are pre-computed in SplitPlan so that group sizes are exact
+        # multiples of n_levels — each level appears exactly n_per_level times per group.
+        levels = plan.vorticity_levels
 
-        for i in range(plan.no_emitter_count):
-            sim_types.append(
-                {
-                    "collider_mode": None,
-                    "no_emitters": True,
-                    "no_colliders": (i < plan.no_collider_count),
-                }
-            )
+        # Empty-scene group: no fluid emitters, optionally no colliders either.
+        # First no_collider_count entries are fully empty (no emitters, no colliders).
+        empty_types = [
+            {"collider_mode": None, "no_emitters": True, "no_colliders": (i < plan.no_collider_count)}
+            for i in range(plan.no_emitter_count)
+        ]
 
-        for _ in range(plan.collider_simple_count):
-            sim_types.append({"collider_mode": "simple", "no_emitters": False, "no_colliders": False})
-        for _ in range(plan.collider_medium_count):
-            sim_types.append({"collider_mode": "medium", "no_emitters": False, "no_colliders": False})
-        for _ in range(plan.collider_complex_count):
-            sim_types.append({"collider_mode": "complex", "no_emitters": False, "no_colliders": False})
+        # Fluid group: build the full list of collider-mode labels, then shuffle so
+        # collider complexity is randomised independently of vorticity level.
+        fluid_types = (
+            [{"collider_mode": "simple", "no_emitters": False, "no_colliders": False}] * plan.collider_simple_count
+            + [{"collider_mode": "medium", "no_emitters": False, "no_colliders": False}] * plan.collider_medium_count
+            + [{"collider_mode": "complex", "no_emitters": False, "no_colliders": False}] * plan.collider_complex_count
+        )
+        rng.shuffle(fluid_types)
 
-        rng.shuffle(sim_types)
+        # Assign vorticity by cycling through levels
+        for i, sim_type in enumerate(empty_types):
+            vorticity = levels[i % len(levels)]
+            config = pack_config(gen_config, sim_index, base_seed, split_name, sim_type, vorticity)
+            all_configs.append((sim_index, split_name, config))
+            sim_index += 1
 
-        for sim_type in sim_types:
-            config = pack_config(gen_config, sim_index, base_seed, split_name, sim_type)
+        for j, sim_type in enumerate(fluid_types):
+            vorticity = levels[j % len(levels)]
+            config = pack_config(gen_config, sim_index, base_seed, split_name, sim_type, vorticity)
             all_configs.append((sim_index, split_name, config))
             sim_index += 1
 
@@ -206,6 +227,8 @@ def generate_simulation(
 
         if result.returncode == 0:
             if check_cache_exists(cache_dir):
+                meta = {"vorticity": config_dict["domain_vorticity"], "split": split_name}
+                (cache_dir / "meta.json").write_text(json.dumps(meta))
                 return True, "success"
             else:
                 print("  Error: Blender succeeded but no VDB files found")

@@ -4,6 +4,7 @@
 #include "Profiling.hpp"
 #include "SceneState.hpp"
 #include <GLFW/glfw3.h>
+#include <cmath>
 #include <imgui.h>
 #include <iostream>
 
@@ -43,6 +44,10 @@ void FluidScene::onInit()
     m_renderer->initialize();
 
     m_simulationFPS = config.getSimulationFPS();
+    m_vorticity = config.getVorticityDefault();
+    m_vorticityMin = config.getVorticityMin();
+    m_vorticityMax = config.getVorticityMax();
+    m_vorticityStep = config.getVorticityStep();
 
     std::cout << "FluidScene initialized" << std::endl;
 }
@@ -128,6 +133,15 @@ void FluidScene::onRenderUI()
     ImGui::SliderInt("Velocity Brush", &m_velocityBrushSize, 1, 15);
     ImGui::SliderFloat("Velocity Strength", &m_velocityStrength, 0.1f, 1.0f, "%.1f");
     ImGui::SliderFloat("Velocity Decay %", &m_velocityDecayPercent, 1.0f, 10.0f, "%.1f%%");
+
+    ImGui::Separator();
+    if (ImGui::SliderFloat("Vorticity", &m_vorticity, m_vorticityMin, m_vorticityMax, "%.2f"))
+    {
+        m_vorticity = std::round(m_vorticity / m_vorticityStep) * m_vorticityStep;
+        if (m_simulation)
+            m_simulation->setVorticity(m_vorticity);
+    }
+
     ImGui::Checkbox("Debug Overlay (O)", &m_showDebugOverlay);
     if (ImGui::IsItemEdited() && m_renderer)
     {

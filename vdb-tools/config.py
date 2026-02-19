@@ -66,19 +66,27 @@ class EmitterConfig(BaseModel):
 
 class ColliderModeConfig(BaseModel):
     count_range: tuple[int, int]
-    scale: ScaleConfig | None = None
+
+
+class ColliderScaledModeConfig(ColliderModeConfig):
+    scale: ScaleConfig
 
 
 class ColliderConfig(BaseModel):
-    simple_mode: ColliderModeConfig
+    simple_mode: ColliderScaledModeConfig
     medium_mode: ColliderModeConfig
-    complex_mode: ColliderModeConfig
+    complex_mode: ColliderScaledModeConfig
     position: ColliderPositionConfig
+
+
+class VorticityConfig(BaseModel):
+    range: float | list[float]
+    step: float = 0.1
 
 
 class DomainConfig(BaseModel):
     y_scale: float = 0.05
-    vorticity: float = 0.05
+    vorticity: VorticityConfig = VorticityConfig(range=0.05)
     beta: float = 0.0
 
 
@@ -93,6 +101,14 @@ class SimulationGenerationConfig(BaseModel):
     colliders: ColliderConfig
     domain: DomainConfig = DomainConfig()
     animation: AnimationConfig = AnimationConfig()
+
+
+def get_vorticity_levels(v: VorticityConfig) -> list[float]:
+    if isinstance(v.range, (int, float)):
+        return [float(v.range)]
+    import numpy as np
+
+    return np.arange(v.range[0], v.range[1] + v.step / 2, v.step).tolist()
 
 
 def load_simulation_config() -> SimulationGenerationConfig:
@@ -120,4 +136,6 @@ __all__ = [
     "project_config",
     "vdb_config",
     "simulation_config",
+    "VorticityConfig",
+    "get_vorticity_levels",
 ]

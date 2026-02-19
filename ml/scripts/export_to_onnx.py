@@ -114,6 +114,8 @@ def load_model_from_checkpoint(checkpoint_path: Path, device: str) -> UNet:
     use_residual = config.get("use_residual", True)
     bottleneck_blocks = config.get("bottleneck_blocks", 1)
     output_activation = config.get("output_activation", "linear_clamp")
+    use_film = config.get("use_film", False)
+    film_cond_dim = config.get("film_cond_dim", 128)
 
     model = UNet(
         cfg=UNetConfig(
@@ -131,6 +133,8 @@ def load_model_from_checkpoint(checkpoint_path: Path, device: str) -> UNet:
             use_residual=use_residual,
             bottleneck_blocks=bottleneck_blocks,
             output_activation=output_activation,
+            use_film=use_film,
+            film_cond_dim=film_cond_dim,
         )
     )
 
@@ -152,21 +156,37 @@ def export_model_to_onnx(
     output_path: Path,
     input_shape: tuple[int, int, int, int],
     device: str,
+    use_film: bool = False,
 ) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     dummy_input = torch.randn(*input_shape, device=device)
 
+    inputs: tuple[torch.Tensor, ...]
+    if use_film:
+        dummy_cond = torch.zeros(input_shape[0], device=device)  # (B,)
+        inputs = (dummy_input, dummy_cond)
+        input_names = ["input", "cond"]
+        dynamic_axes: dict[str, dict[int, str]] | None = {
+            "input": {0: "batch"},
+            "cond": {0: "batch"},
+            "output": {0: "batch"},
+        }
+    else:
+        inputs = (dummy_input,)
+        input_names = ["input"]
+        dynamic_axes = None
+
     torch.onnx.export(
         model,
-        (dummy_input,),
+        inputs,
         str(output_path),
         export_params=True,
         opset_version=ONNX_OPSET_VERSION,
         do_constant_folding=True,
-        input_names=["input"],
+        input_names=input_names,
         output_names=["output"],
-        dynamic_axes=None,  # Fixed input size for now
+        dynamic_axes=dynamic_axes,
     )
 
     file_size_mb = output_path.stat().st_size / (1024 * 1024)
@@ -254,10 +274,12 @@ def export_checkpoint(
     variants_info = {}
 
     try:
+        model = load_model_from_checkpoint(checkpoint_path, device)
+        use_film = model.cfg.use_film
+
         if not onnx_path.exists():
             print("  Exporting FP32...")
-            model = load_model_from_checkpoint(checkpoint_path, device)
-            export_model_to_onnx(model, onnx_path, input_shape, device)
+            export_model_to_onnx(model, onnx_path, input_shape, device, use_film=use_film)
         else:
             print("  FP32 exists, skipping")
 

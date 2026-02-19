@@ -20,6 +20,10 @@ struct SimulationConfig
     float fps{30.0f};
     int gridResolution{128};
     int inputChannels{0};
+    float vorticityDefault{0.2f};
+    float vorticityMin{0.1f};
+    float vorticityMax{0.4f};
+    float vorticityStep{0.1f};
 };
 
 struct ModelsConfig
@@ -64,6 +68,22 @@ public:
     int getInputChannels() const
     {
         return m_simulationConfig.inputChannels;
+    }
+    float getVorticityDefault() const
+    {
+        return m_simulationConfig.vorticityDefault;
+    }
+    float getVorticityMin() const
+    {
+        return m_simulationConfig.vorticityMin;
+    }
+    float getVorticityMax() const
+    {
+        return m_simulationConfig.vorticityMax;
+    }
+    float getVorticityStep() const
+    {
+        return m_simulationConfig.vorticityStep;
     }
 
     const std::filesystem::path& getModelsFolder() const
