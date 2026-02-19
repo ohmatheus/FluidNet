@@ -2,7 +2,7 @@ in_channels: 6
 out_channels: 3
 base_channels: 32
 depth: 3
-norm: instance
+norm: instance #group
 act: gelu
 group_norm_groups: 8
 dropout: 0.1
@@ -12,3 +12,5 @@ padding_mode: replicate  # "zeros", "reflect", "replicate", "circular"
 use_residual: true
 bottleneck_blocks: 1
 output_activation: linear_clamp
+use_film: true
+film_cond_dim: 128

@@ -68,6 +68,8 @@ class TrainingConfig(BaseModel):
     use_residual: bool = True
     bottleneck_blocks: int = 1
     output_activation: OutputActivationType = "linear_clamp"
+    use_film: bool = False
+    film_cond_dim: int = 128
 
     # MLFlow settings
     mlflow_tracking_uri: str = "./mlruns"  # mlflow server

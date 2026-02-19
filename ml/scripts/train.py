@@ -126,6 +126,8 @@ def train_single_variant(
             use_residual=config.use_residual,
             bottleneck_blocks=config.bottleneck_blocks,
             output_activation=config.output_activation,
+            use_film=config.use_film,
+            film_cond_dim=config.film_cond_dim,
         )
     ).to(config.device)
 
@@ -228,6 +230,8 @@ def train_single_variant(
                 "use_residual": config.use_residual,
                 "bottleneck_blocks": config.bottleneck_blocks,
                 "output_activation": config.output_activation,
+                "use_film": config.use_film,
+                "film_cond_dim": config.film_cond_dim,
                 # Checkpoint settings
                 "save_every_n_epochs": config.save_every_n_epochs,
                 "keep_last_n_checkpoints": config.keep_last_n_checkpoints,
