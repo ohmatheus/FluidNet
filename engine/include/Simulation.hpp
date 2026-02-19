@@ -28,6 +28,9 @@ public:
         return !m_useGpu;
     }
 
+    void setVorticity(float v);
+    float getVorticity() const;
+
     const SimulationBuffer* getLatestState() const;
     float getAvgComputeTimeMs() const;
 
@@ -57,6 +60,8 @@ private:
     float m_targetStepTime{0.0f};
 
     const std::atomic<SceneMaskSnapshot*>* m_sceneSnapshotPtr{nullptr};
+
+    std::atomic<float> m_vorticity{0.2f};
 
     std::atomic<float> m_avgComputeTimeMs{0.0f};
     float m_sumComputeTimeMs{0.0f};

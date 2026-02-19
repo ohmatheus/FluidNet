@@ -72,6 +72,11 @@ private:
     float m_velocityStrength{0.5f};
     float m_velocityDecayPercent{5.0f};
 
+    float m_vorticity{0.2f};
+    float m_vorticityMin{0.1f};
+    float m_vorticityMax{0.4f};
+    float m_vorticityStep{0.1f};
+
     int m_prevMouseGridX{-1};
     int m_prevMouseGridY{-1};
     bool m_mousePressed{false};
