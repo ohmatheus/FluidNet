@@ -146,19 +146,20 @@ class Trainer:
 
         pbar = tqdm(self.train_loader, desc="Training", leave=False)
         for batch_data in pbar:
-            # Detect rollout mode based on batch structure
-            if len(batch_data) == 3:
-                # Rollout mode: (x_0, y_seq, masks)
-                inputs, targets, masks = batch_data
+            if len(batch_data) == 4:
+                # Rollout mode: (x_0, y_seq, masks, cond)
+                inputs, targets, masks, cond = batch_data
                 inputs = inputs.to(self.device, non_blocking=True)
                 targets = targets.to(self.device, non_blocking=True)
                 masks = masks.to(self.device, non_blocking=True)
+                cond = cond.to(self.device, non_blocking=True)
                 rollout_mode = True
             else:
-                # Single-step mode: (x, y)
-                inputs, targets = batch_data
+                # Single-step mode: (x, y, cond)
+                inputs, targets, cond = batch_data
                 inputs = inputs.to(self.device, non_blocking=True)
                 targets = targets.to(self.device, non_blocking=True)
+                cond = cond.to(self.device, non_blocking=True)
                 rollout_mode = False
 
             self.optimizer.zero_grad()
@@ -167,9 +168,9 @@ class Trainer:
             if self.scaler is not None:
                 with autocast(device_type=self.device):
                     if rollout_mode:
-                        loss, loss_dict, _ = self._compute_rollout_loss(inputs, targets, masks)
+                        loss, loss_dict, _ = self._compute_rollout_loss(inputs, targets, masks, cond)
                     else:
-                        outputs = self.model(inputs)
+                        outputs = self.model(inputs, cond)
                         loss, loss_dict = self.criterion(outputs, targets, inputs)
 
                 self.scaler.scale(loss).backward()
@@ -182,9 +183,9 @@ class Trainer:
                 self.scaler.update()
             else:
                 if rollout_mode:
-                    loss, loss_dict, _ = self._compute_rollout_loss(inputs, targets, masks)
+                    loss, loss_dict, _ = self._compute_rollout_loss(inputs, targets, masks, cond)
                 else:
-                    outputs = self.model(inputs)
+                    outputs = self.model(inputs, cond)
                     loss, loss_dict = self.criterion(outputs, targets, inputs)
 
                 loss.backward()
@@ -216,34 +217,35 @@ class Trainer:
         with torch.no_grad():
             pbar = tqdm(self.val_loader, desc="Validation", leave=False)
             for batch_data in pbar:
-                # Detect rollout mode based on batch structure
-                if len(batch_data) == 3:
-                    # Rollout mode: (x_0, y_seq, masks)
-                    inputs, targets, masks = batch_data
+                if len(batch_data) == 4:
+                    # Rollout mode: (x_0, y_seq, masks, cond)
+                    inputs, targets, masks, cond = batch_data
                     inputs = inputs.to(self.device, non_blocking=True)
                     targets = targets.to(self.device, non_blocking=True)
                     masks = masks.to(self.device, non_blocking=True)
+                    cond = cond.to(self.device, non_blocking=True)
                     rollout_mode = True
                 else:
-                    # Single-step mode: (x, y)
-                    inputs, targets = batch_data
+                    # Single-step mode: (x, y, cond)
+                    inputs, targets, cond = batch_data
                     inputs = inputs.to(self.device, non_blocking=True)
                     targets = targets.to(self.device, non_blocking=True)
+                    cond = cond.to(self.device, non_blocking=True)
                     rollout_mode = False
 
                 # Compute loss (with or without AMP)
                 if self.scaler is not None:
                     with autocast(device_type=self.device):
                         if rollout_mode:
-                            loss, loss_dict, outputs = self._compute_rollout_loss(inputs, targets, masks)
+                            loss, loss_dict, outputs = self._compute_rollout_loss(inputs, targets, masks, cond)
                         else:
-                            outputs = self.model(inputs)
+                            outputs = self.model(inputs, cond)
                             loss, loss_dict = self.criterion(outputs, targets, inputs)
                 else:
                     if rollout_mode:
-                        loss, loss_dict, outputs = self._compute_rollout_loss(inputs, targets, masks)
+                        loss, loss_dict, outputs = self._compute_rollout_loss(inputs, targets, masks, cond)
                     else:
-                        outputs = self.model(inputs)
+                        outputs = self.model(inputs, cond)
                         loss, loss_dict = self.criterion(outputs, targets, inputs)
 
                 num_batches += 1
@@ -313,6 +315,7 @@ class Trainer:
         x_0: torch.Tensor,
         y_seq: torch.Tensor,
         masks: torch.Tensor,
+        cond: torch.Tensor,
     ) -> tuple[torch.Tensor, dict[str, float], torch.Tensor]:
         """
         Compute loss for K-step autoregressive rollout.
@@ -329,7 +332,7 @@ class Trainer:
                 collider_k = masks[:, k, 1:2, :, :]
                 model_input = torch.cat([state_current, state_prev, emitter_k, collider_k], dim=1)
 
-                pred = self.model(model_input)  # (B, 3, H, W)
+                pred = self.model(model_input, cond)  # (B, 3, H, W)
 
                 if k == K - 1:
                     target_final = y_seq[:, k, :, :, :]
@@ -357,7 +360,7 @@ class Trainer:
                 collider_k = masks[:, k, 1:2, :, :]
                 model_input = torch.cat([state_current, state_prev, emitter_k, collider_k], dim=1)
 
-                pred = self.model(model_input)  # (B, 3, H, W)
+                pred = self.model(model_input, cond)  # (B, 3, H, W)
 
                 target_k = y_seq[:, k, :, :, :]
                 loss_k, loss_dict_k = self.criterion(pred, target_k, model_input)
