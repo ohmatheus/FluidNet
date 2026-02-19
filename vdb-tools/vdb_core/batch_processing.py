@@ -1,3 +1,4 @@
+import json
 import re
 from multiprocessing import Pool
 from pathlib import Path
@@ -182,6 +183,15 @@ def process_single_cache_sequence(
 ) -> tuple[int, list[SequenceStats]]:
     cache_data_dir = Path(cache_data_dir)
     output_dir = Path(output_dir)
+
+    meta_path = cache_data_dir.parent / "meta.json"
+    cache_vorticity: float | None = None
+    if meta_path.exists():
+        with open(meta_path) as f:
+            cache_vorticity = json.load(f).get("vorticity")
+    else:
+        print(f"Warning: meta.json missing for {cache_data_dir.parent.name}, vorticity will be null")
+
     vdb_files = sorted(cache_data_dir.glob("*.vdb"))
 
     if not vdb_files:
@@ -360,6 +370,9 @@ def process_single_cache_sequence(
             collider=c_stack,
         )
         print(f"Saved {out_path}  shape: T={T}, H={H}, W={W} (density, velx, velz, emitter, collider)")
+        meta_out = output_dir / f"seq_{global_seq_num:04d}.meta.json"
+        with open(meta_out, "w") as f:
+            json.dump({"vorticity": cache_vorticity}, f)
 
         # Compute statistics for this sequence
         try:
